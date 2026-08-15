@@ -80,13 +80,10 @@ Leave checklists and review chatter out; the description ships to `main`'s histo
 **Done when** the title and description would read correctly as a commit on `main`, because
 they will be one.
 
-### 5. Confirm
+### 5. Push and open
 
-Show the user the title and description exactly as they will land. Let them edit.
-
-**Done when** the user accepts the draft.
-
-### 6. Push and open
+Invoking this skill is the go-ahead — open the PR. Show the title and description as a draft
+and stop here only when the user asked for a draft.
 
 ```bash
 git push -u origin HEAD
@@ -95,7 +92,7 @@ gh pr create --title "<title>" --body-file - <<'EOF'
 EOF
 ```
 
-### 7. Verify the links
+### 6. Verify the links
 
 Confirm GitHub actually parsed the keywords rather than trusting that it did:
 
@@ -108,7 +105,7 @@ keyword — fix the description with `gh pr edit --body-file -` and check again.
 
 **Done when** the returned set matches the closing list exactly.
 
-### 8. Report
+### 7. Report
 
 Give the user the PR URL, the linked issues, and the commit that will land on `main` when they
 squash.
