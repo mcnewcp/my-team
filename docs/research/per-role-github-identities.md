@@ -464,19 +464,20 @@ The last point is why the required-approvals uncertainty does not block v0.1.
 
 ## Open questions marked UNVERIFIED
 
-1. No primary source directly states "a GitHub App may submit an approving review." Inferred
-   from the `GITHUB_TOKEN`-scoped setting plus the absence of any carve-out on the endpoint.
-2. The self-approval restriction's behaviour for app-vs-app and app-vs-owner is not documented.
+1. ~~No primary source directly states "a GitHub App may submit an approving review."~~
+   **Settled empirically 2026-08-15 — see "Settled by smoke test" below.**
+2. ~~The self-approval restriction's behaviour for app-vs-app and app-vs-owner is not
+   documented.~~ **Settled empirically 2026-08-15 — see below.**
 3. Whether a **custom** app's approving review counts toward branch-protection required
    approvals (only the Actions case is documented).
 4. Whether registering a GitHub App is free — no price statement exists either way, though no
    payment step appears in the flow.
 5. That a GitHub App has no 2FA of its own — true by construction (no 2FA step exists in the
    flow; it authenticates by private-key-signed JWT), but not stated in a quotable sentence.
-6. The literal `app-slug[bot]` login-suffix convention and `GET /users/{app-slug}[bot]` lookup.
-   The *behaviour* (attribution to the app) is documented; the naming convention is not. Closest
-   anchor: *"The `:app_slug` is just the URL-friendly name of your GitHub App"*
-   ([REST: apps](https://docs.github.com/en/rest/apps/apps)).
+6. ~~The literal `app-slug[bot]` login-suffix convention.~~ **Observed 2026-08-15**: a review
+   submitted by app slug `my-team-reviewer-mcnewcp` is attributed to login
+   `my-team-reviewer-mcnewcp[bot]`, `user.type: "Bot"`, `user.id: 317436782`. Still convention
+   rather than a documented guarantee, but no longer merely assumed.
 7. The bot noreply email pattern `<ID>+<app-slug>[bot]@users.noreply.github.com`. Only the human
    form is documented — *"your `noreply` email address is an ID number and your username in the
    form of `ID+USERNAME@users.noreply.github.com`"*
@@ -493,3 +494,25 @@ The last point is why the required-approvals uncertainty does not block v0.1.
   100 GitHub Apps."* (Previously listed as "none found".)
 - **Commit attribution under an installation token** — fully answered above; see the
   REST-vs-`git push` table.
+
+### Settled by smoke test — [#15](https://github.com/mcnewcp/my-team/issues/15), 2026-08-15
+
+Run against `mcnewcp/personal-assistant` with the reviewer App (`app_id` 4608397). Both
+throwaway PRs were closed and their branches deleted; `main` was unchanged.
+
+- **A GitHub App installation token *can* submit a formal approving review.** `gh pr review
+  --approve` produced a review with `state: "APPROVED"`, `user.login:
+  "my-team-reviewer-mcnewcp[bot]"`, `user.type: "Bot"`, and GitHub's own `reviewDecision:
+  "APPROVED"`. The PR carried **zero** issue comments, so it did not silently degrade into a
+  comment. Question 1 above is now fact, not inference.
+- **"Cannot approve your own pull request" applies to Apps, in both directions.** An App
+  approving a PR authored by `mcnewcp` **succeeds** — the App is a distinct actor from its
+  owner. The same App approving a PR **it** authored fails with `422 Unprocessable Entity`,
+  `errors: ["Review Can not approve your own pull request"]`. Design consequence: the
+  never-open-and-approve rule is **enforced by GitHub**, so an orchestrator bug cannot
+  manufacture a bogus approval. Enforce it locally anyway, to fail fast with a clear message.
+- **`gh` exit code is not evidence.** `gh pr review --approve` exits 0; only the reviews
+  endpoint establishes what actually landed. Another instance of the *verify by observation*
+  rule that governs the state machine.
+
+Provisioning is repeatable via `scripts/register-role-app.sh` in the orchestrator repo.
