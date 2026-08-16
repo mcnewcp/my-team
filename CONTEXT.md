@@ -25,8 +25,16 @@ An AI coding tool that `my-team` drives to do the actual engineering — Claude 
 _Avoid_: backend, provider, engine, model
 
 **Role**:
-A named agent with one job and one definition of done — the implementer, the reviewer, the judge. Roles are the units a tick dispatches to.
-_Avoid_: persona, worker, bot
+An identity with authority — the implementer, the reviewer, the judge. A role holds its own credential and is what GitHub sees acting. Roles are provisioned once and perform many actions.
+_Avoid_: worker, bot, agent
+
+**Action**:
+One unit of work a tick dispatches: one harness session, one skill, one definition of done. Several actions belong to the same role — the implementer both writes the code and opens the PR.
+_Avoid_: job, step, task
+
+**Persona**:
+The name and voice attached to a role — Robin implements, Shane reviews, Lewis judges. Lives in the orchestrator and is injected at dispatch; never in a skill file, so a human running the skill by hand gets the behaviour without the character. A persona colours the prose it writes; it never announces itself.
+_Avoid_: character, personality
 
 ### State and narration
 
