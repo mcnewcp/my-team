@@ -14,6 +14,10 @@ _Avoid_: tool repo, host repo
 The project `my-team` is pointed at, where issues, PRs and CI live. The CLI is installed into it and run from its root.
 _Avoid_: client repo, downstream repo, consumer repo
 
+**Workspace**:
+The per-issue directory an agent works in — a `git worktree` of the target repo, plus that issue's handoffs alongside it. Lives outside every repo and is discarded when the issue merges.
+_Avoid_: sandbox, checkout, workdir
+
 ### The loop
 
 **Tick**:
@@ -42,11 +46,11 @@ _Avoid_: character, personality
 What the orchestrator reads to decide what to do next. Lives exclusively on GitHub, and must always be derivable from observed issue, PR, and CI state.
 
 **Narration**:
-What humans and successor agents read — handoff documents, reasoning, progress. Never an input to an orchestrator decision. Distinct from **state**, and free to live outside GitHub as long as it is reachable by a link from it.
+What humans read — reasoning, progress, and the events a future feed or board view would render. Never an input to an orchestrator decision. Distinct from **state**, and free to live outside GitHub as long as it is reachable by a link from it.
 _Avoid_: logs, chatter, output
 
 **Handoff**:
-A document written by an agent that has stopped before finishing, holding what a successor with a fresh context window needs to resume. A file on the working branch, not a comment.
+A context-complete document written by an agent that stopped before finishing, addressed to the next copy of its own role. Lives in the workspace rather than in git, and is never an input to an orchestrator decision.
 _Avoid_: checkpoint, summary, context dump
 
 **Verify by observation**:
