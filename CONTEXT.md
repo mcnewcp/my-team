@@ -42,8 +42,17 @@ _Avoid_: character, personality
 
 ### State and narration
 
+**Observation**:
+The single snapshot of the target repo's GitHub state that one tick reads before it acts — the issue, the branch, the PR, its reviews, the checks at the current head, and the PR timeline. A tick observes once; everything it decides comes from that one snapshot.
+_Avoid_: poll, scan, read
+
 **State**:
-What the orchestrator reads to decide what to do next. Lives exclusively on GitHub, and must always be derivable from observed issue, PR, and CI state.
+The derived value naming where an issue sits in the loop. Computed from an Observation, never stored, and never written anywhere: the same Observation always yields the same State. The set is fixed and ordered, and the order is what breaks ties between states that look alike.
+_Avoid_: status, phase, stage
+
+**Declaration**:
+An observable act by which a role asserts something the orchestrator cannot verify for itself — the counterpart to **Verify by observation**. A Declaration is always a deliberate API call attributable to a role identity, never prose the orchestrator reads. Exactly two exist: the implementer marking its pull request ready, and the judge submitting a formal review.
+_Avoid_: signal, report, claim
 
 **Narration**:
 What humans read — reasoning, progress, and the events a future feed or board view would render. Never an input to an orchestrator decision. Distinct from **state**, and free to live outside GitHub as long as it is reachable by a link from it.
