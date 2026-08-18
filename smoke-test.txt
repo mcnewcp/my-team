@@ -1,1 +1,2 @@
 smoke test for draft/review invariance — throwaway, do not merge
+second line — new commit to test review staleness
