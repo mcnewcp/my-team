@@ -184,7 +184,10 @@ finish() {
 # Replace the example below. Set TOTAL_STAGES to match the stages you write.
 # ──────────────────────────────────────────────────────────────────────────
 
-TARGET_REPO="${TARGET_REPO:-mcnewcp/personal-assistant}"
+# Every repo the roles are installed on. mcnewcp/my-team is in the set
+# deliberately: the orchestrator repo is also a target, so the team can be
+# pointed at its own source.
+TARGET_REPOS="${TARGET_REPOS:-mcnewcp/personal-assistant mcnewcp/my-team}"
 ACCOUNT="${ACCOUNT:-mcnewcp}"
 CONFIG_DIR="$HOME/.config/my-team"
 KEY_DIR="$CONFIG_DIR/keys"
@@ -340,13 +343,13 @@ fi
 pause
 
 # ── Stage 3 — install the app on the target repo ──────────────────────────
-stage "Install the App on $TARGET_REPO"
+stage "Install the App on the target repos"
 say "Registering an app doesn't grant it anything. Installing it does."
 open_url "https://github.com/settings/apps/$APP_SLUG/installations"
 step "Click 'Install' next to $ACCOUNT."
 step "Choose 'Only select repositories'."
-step "Select $TARGET_REPO — and nothing else."
-step "Click 'Install'."
+for _r in $TARGET_REPOS; do step "Select $_r"; done
+step "Click 'Install' — and select nothing beyond those."
 pause "Installed? Press Enter."
 
 fi  # end of the register-only stages
@@ -400,12 +403,12 @@ else
       SKIPPED+=("record BOT_USER_ID: gh api /users/${APP_SLUG}%5Bbot%5D --jq .id")
     fi
 
-    INSTALLATION_ID=$(app_api "$JWT" /app/installations | jq -r --arg r "$TARGET_REPO" '
-        map(select(.account.login == ($r | split("/") | .[0]))) | .[0].id // empty' || true)
+    INSTALLATION_ID=$(app_api "$JWT" /app/installations | jq -r --arg a "$ACCOUNT" '
+        map(select(.account.login == $a)) | .[0].id // empty' || true)
 
     if [[ -z "$INSTALLATION_ID" ]]; then
       warn "the app reports no installation — did stage 3 complete?"
-      SKIPPED+=("install the app on $TARGET_REPO, then re-run this wizard")
+      SKIPPED+=("install the app on $TARGET_REPOS, then re-run this wizard")
     else
       write_env INSTALLATION_ID "$INSTALLATION_ID"
 
@@ -419,17 +422,25 @@ else
         REPOS=$(GH_TOKEN="$TOKEN" gh api /installation/repositories \
                   --jq '.repositories[].full_name' 2>/dev/null || true)
         printf '  %s✓ token minted%s (expires in 1 hour, never written to disk)\n' "$GREEN" "$RESET"
-        if printf '%s\n' "$REPOS" | grep -qx "$TARGET_REPO"; then
-          printf '  %s✓ token reaches%s %s\n' "$GREEN" "$RESET" "$TARGET_REPO"
-          EXTRA=$(printf '%s\n' "$REPOS" | grep -vx "$TARGET_REPO" | grep -v '^$' || true)
-          if [[ -n "$EXTRA" ]]; then
-            warn "the installation is scoped wider than the target repo. It also reaches:"
-            while read -r r; do [[ -n "$r" ]] && note "  - $r"; done <<<"$EXTRA"
-            SKIPPED+=("narrow the installation to $TARGET_REPO only")
+        MISSING=""
+        for _r in $TARGET_REPOS; do
+          if printf '%s\n' "$REPOS" | grep -qx "$_r"; then
+            printf '  %s✓ token reaches%s %s\n' "$GREEN" "$RESET" "$_r"
+          else
+            MISSING="$MISSING $_r"
           fi
-        else
-          warn "token works but doesn't reach $TARGET_REPO — it sees: ${REPOS:-nothing}"
-          SKIPPED+=("re-scope the installation to include $TARGET_REPO")
+        done
+        if [[ -n "$MISSING" ]]; then
+          warn "the installation does not reach:$MISSING"
+          note "it sees: ${REPOS:-nothing}"
+          SKIPPED+=("re-scope the installation to include$MISSING")
+        fi
+        EXTRA=$(printf '%s\n' "$REPOS" | grep -v '^$' \
+                  | grep -vxF "$(printf '%s\n' $TARGET_REPOS)" || true)
+        if [[ -n "$EXTRA" ]]; then
+          warn "the installation is scoped wider than the target set. It also reaches:"
+          while read -r r; do [[ -n "$r" ]] && note "  - $r"; done <<<"$EXTRA"
+          SKIPPED+=("narrow the installation to: $TARGET_REPOS")
         fi
       fi
     fi
