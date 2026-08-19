@@ -58,8 +58,12 @@ _Avoid_: signal, report, claim
 What humans read — reasoning, progress, and the events a future feed or board view would render. Never an input to an orchestrator decision. Distinct from **state**, and free to live outside GitHub as long as it is reachable by a link from it.
 _Avoid_: logs, chatter, output
 
+**Smart zone**:
+The span of context within which a model still works well, far below the window's true ceiling. One absolute token count, set once for the whole team; crossing it is what stops a dispatch and calls for a **handoff**.
+_Avoid_: context limit, budget, cap, threshold
+
 **Handoff**:
-A context-complete document written by an agent that stopped before finishing, addressed to the next copy of its own role. Lives in the workspace rather than in git, and is never an input to an orchestrator decision.
+A context-complete document an agent writes when the orchestrator stops it at the **smart zone**, addressed to the next copy of its own role. Lives in the workspace rather than in git, and is never an input to an orchestrator decision.
 _Avoid_: checkpoint, summary, context dump
 
 **Verify by observation**:
