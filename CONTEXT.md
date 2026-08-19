@@ -43,7 +43,7 @@ _Avoid_: character, personality
 ### State and narration
 
 **Observation**:
-The single snapshot of the target repo's GitHub state that one tick reads before it acts — the issue, the branch, the PR, its reviews, the checks at the current head, and the PR timeline. A tick observes once; everything it decides comes from that one snapshot.
+The single snapshot of the target repo's GitHub state that one tick reads before it acts — the issue, the remote branch, the PR, its reviews, the checks at the current head, and the PR timeline. Local git inside the workspace is never part of it. A tick observes once; everything it decides comes from that one snapshot.
 _Avoid_: poll, scan, read
 
 **State**:
