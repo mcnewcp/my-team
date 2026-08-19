@@ -184,12 +184,25 @@ finish() {
 # Replace the example below. Set TOTAL_STAGES to match the stages you write.
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=4
-
 TARGET_REPO="${TARGET_REPO:-mcnewcp/personal-assistant}"
 ACCOUNT="${ACCOUNT:-mcnewcp}"
 CONFIG_DIR="$HOME/.config/my-team"
 KEY_DIR="$CONFIG_DIR/keys"
+
+# ── The v0.1 roster ───────────────────────────────────────────────────────
+# Three roles, settled in mcnewcp/my-team#7; the per-role permission sets in
+# its context-pointer comment on #16. Keys and config are keyed on the *role*
+# — a persona is a presentation layer and may be recast without re-provisioning.
+#
+#   role_meta ROLE -> "persona<TAB>contents<TAB>pull requests<TAB>issues"
+role_meta() {
+  case "$1" in
+    implementer) printf 'robin\tRead and write\tRead and write\tRead-only' ;;
+    reviewer)    printf 'shane\tRead-only\tRead and write\tRead-only' ;;
+    judge)       printf 'lewis\tRead and write\tRead and write\tRead and write' ;;
+    *)           return 1 ;;
+  esac
+}
 
 # base64url — no padding, no line wrapping, URL-safe alphabet.
 _b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
@@ -206,7 +219,8 @@ mint_jwt() {
   printf '%s.%s' "$unsigned" "$sig"
 }
 
-# app_api JWT PATH [curl args...] — call the API as the app itself.
+# app_api JWT PATH [curl args...] — call the API as the app itself. `gh api`
+# cannot do this: it sends `Authorization: token` and an App JWT needs Bearer.
 app_api() {
   local jwt="$1" path="$2"; shift 2
   curl -sS -H "Authorization: Bearer $jwt" \
@@ -215,31 +229,68 @@ app_api() {
           "$@" "https://api.github.com${path}"
 }
 
-banner "my-team — register a per-role GitHub App"
-
-# ── Prelude: which role are we registering? ────────────────────────────────
-printf '  %sWhich role is this app for?%s %s[reviewer]%s ' "$BOLD" "$RESET" "$DIM" "$RESET"
+# ── Prelude: which role, and are we registering or re-syncing? ────────────
+# This runs before the banner because it decides how many stages there are.
+_clear
+printf '\n%s%s  my-team — register a per-role GitHub App%s\n\n' "$BOLD" "$BLUE" "$RESET"
+printf '  %sWhich role is this app for?%s %s[implementer | reviewer | judge]%s ' \
+  "$BOLD" "$RESET" "$DIM" "$RESET"
 read -r ROLE || true
 ROLE="${ROLE:-reviewer}"
+
+if ! META=$(role_meta "$ROLE"); then
+  printf '\n'
+  warn "unknown role '$ROLE' — the v0.1 roster is implementer, reviewer, judge."
+  printf '\n'
+  exit 1
+fi
+IFS=$'\t' read -r PERSONA PERM_CONTENTS PERM_PULLS PERM_ISSUES <<<"$META"
+
 ENV_FILE="$CONFIG_DIR/$ROLE.env"          # non-secret ids only; lives outside every repo
 PEM_PATH="$KEY_DIR/$ROLE.pem"
 mkdir -p "$KEY_DIR"
 chmod 700 "$CONFIG_DIR" "$KEY_DIR"
+
+# Re-sync: an App already registered for this role only needs the verify stage,
+# which re-reads every id from the App itself. App names are editable, so a
+# stored slug goes stale on every rename — this is the repair path, not just a
+# re-check.
+RESYNC=0
+EXISTING_APP_ID=$(_existing APP_ID || true)
+if [[ -n "$EXISTING_APP_ID" ]]; then
+  printf '\n'
+  note "'$ROLE' is already registered — App ID $EXISTING_APP_ID, key $PEM_PATH"
+  if confirm "Re-sync it (re-read its ids) instead of registering a new App?"; then
+    RESYNC=1
+    APP_ID="$EXISTING_APP_ID"
+    APP_SLUG=$(_existing APP_SLUG || true)   # so stage 4 can report any drift
+  fi
+fi
+
+TOTAL_STAGES=4
+(( RESYNC )) && TOTAL_STAGES=1
+
+banner "my-team — $PERSONA ($ROLE)"
 note "ids → $ENV_FILE   key → $PEM_PATH"
 pause "Press Enter to begin."
+
+if (( ! RESYNC )); then
 
 # ── Stage 1 — register the app (browser only) ─────────────────────────────
 stage "Register the GitHub App"
 say "This is the long one: one form, then Create. Everything else is quick."
 open_url "https://github.com/settings/apps/new"
-step "GitHub App name — must be globally unique across GitHub. Try: my-team-$ROLE-$ACCOUNT"
+step "GitHub App name — must be globally unique across GitHub. Use: $PERSONA-my-team"
+note "Persona-named, not role-named (#7): the App's byline is where the persona"
+note "is actually visible. Renaming later is safe — config keys on app_id."
 step "Homepage URL — https://github.com/$ACCOUNT/my-team"
 step "Webhook — UNCHECK 'Active'. This removes the URL / secret / SSL fields."
 say ""
-say "Repository permissions (leave every other permission at 'No access'):"
-step "Contents ............ Read and write"
-step "Issues .............. Read and write"
-step "Pull requests ....... Read and write"
+say "Repository permissions for $PERSONA — leave every other one at 'No access':"
+step "Contents ............ $PERM_CONTENTS"
+step "Pull requests ....... $PERM_PULLS"
+step "Issues .............. $PERM_ISSUES"
+warn "Set these correctly now — widening them later makes you re-accept the installation."
 say ""
 step "Where can this GitHub App be installed? — 'Only on this account'"
 step "Click 'Create GitHub App'."
@@ -249,11 +300,10 @@ ask APP_ID "Paste the App ID:"
 say ""
 note "The slug is the last path segment of that page's URL:"
 note "  github.com/settings/apps/<slug>   — also the final breadcrumb."
-note "Usually the app name lowercased with spaces hyphenated."
+note "Only used to deep-link the next two stages; stage 4 re-reads it from the App."
 ask APP_SLUG "Paste the app's URL slug:"
 write_env APP_ID "$APP_ID"
-write_env APP_SLUG "$APP_SLUG"
-write_env ROLE "$ROLE"
+write_env APP_SLUG "$APP_SLUG"   # provisional — stage 4 re-reads it from the App
 
 # ── Stage 2 — private key ─────────────────────────────────────────────────
 stage "Generate and store the private key"
@@ -284,6 +334,8 @@ else
   mv "$SRC_PEM" "$PEM_PATH"
   chmod 600 "$PEM_PATH"
   printf '  %s✓ key stored%s %s (mode 600, outside every repo)\n' "$GREEN" "$RESET" "$PEM_PATH"
+  note "Named for the role, not the persona: config resolves role → {app_id, key_path},"
+  note "so recasting a persona never moves a file."
 fi
 pause
 
@@ -293,13 +345,16 @@ say "Registering an app doesn't grant it anything. Installing it does."
 open_url "https://github.com/settings/apps/$APP_SLUG/installations"
 step "Click 'Install' next to $ACCOUNT."
 step "Choose 'Only select repositories'."
-step "Select $TARGET_REPO."
+step "Select $TARGET_REPO — and nothing else."
 step "Click 'Install'."
 pause "Installed? Press Enter."
 
-# ── Stage 4 — verify: sign a JWT, mint an installation token ──────────────
-stage "Verify — mint an installation token"
-say "Proves the key signs, the app is installed, and the token reaches the repo."
+fi  # end of the register-only stages
+
+# ── Stage 4 — verify, and read back the ids config will key on ────────────
+stage "Verify and record the identity"
+say "Proves the key signs, the app is installed, and its token reaches the repo —"
+say "then reads back the numeric ids .my-team/config.toml keys on."
 
 if [[ ! -f "$PEM_PATH" ]]; then
   warn "no key at $PEM_PATH — can't verify. Re-run this wizard once the key is in place."
@@ -307,32 +362,75 @@ if [[ ! -f "$PEM_PATH" ]]; then
 else
   JWT=$(mint_jwt "$PEM_PATH" "$APP_ID")
 
-  INSTALLATION_ID=$(app_api "$JWT" /app/installations | jq -r --arg r "$TARGET_REPO" '
-      map(select(.account.login == ($r | split("/") | .[0]))) | .[0].id // empty' || true)
+  # Ask the App who it is. Names are editable, so a stored slug goes stale on
+  # every rename while the numeric ids never move — which is exactly why the
+  # slug is never the identity handle.
+  APP_JSON=$(app_api "$JWT" /app || true)
+  LIVE_SLUG=$(printf '%s' "$APP_JSON" | jq -r '.slug // empty')
+  LIVE_NAME=$(printf '%s' "$APP_JSON" | jq -r '.name // empty')
 
-  if [[ -z "$INSTALLATION_ID" ]]; then
-    warn "the app reports no installation — did stage 3 complete?"
-    note "raw response:"
-    app_api "$JWT" /app/installations | head -c 600; printf '\n'
-    SKIPPED+=("install the app on $TARGET_REPO, then re-run this wizard")
+  if [[ -z "$LIVE_SLUG" ]]; then
+    warn "the App didn't answer as itself — check that the App ID and key match."
+    note "raw response:"; printf '%s' "$APP_JSON" | head -c 400; printf '\n'
+    SKIPPED+=("verification (GET /app returned nothing usable)")
   else
-    write_env INSTALLATION_ID "$INSTALLATION_ID"
+    printf '  %s✓ app%s %s  %s(slug %s)%s\n' "$GREEN" "$RESET" "$LIVE_NAME" "$DIM" "$LIVE_SLUG" "$RESET"
+    if [[ -n "${APP_SLUG:-}" && "$APP_SLUG" != "$LIVE_SLUG" ]]; then
+      note "stored slug was '$APP_SLUG' — refreshed to '$LIVE_SLUG'"
+    fi
+    APP_SLUG="$LIVE_SLUG"
+    write_env ROLE "$ROLE"
+    write_env PERSONA "$PERSONA"
+    write_env APP_SLUG "$APP_SLUG"
+    if [[ "$LIVE_NAME" != "$PERSONA-my-team" ]]; then
+      warn "App is named '$LIVE_NAME', but #7 wants '$PERSONA-my-team' for the $ROLE role."
+      SKIPPED+=("rename the App to $PERSONA-my-team (ids and installation survive a rename)")
+    fi
 
-    TOKEN=$(app_api "$JWT" "/app/installations/$INSTALLATION_ID/access_tokens" \
-              -X POST | jq -r '.token // empty' || true)
-
-    if [[ -z "$TOKEN" ]]; then
-      warn "could not mint an installation token"
-      SKIPPED+=("mint an installation token — check the App ID and key match")
+    # The bot user id is the actor recorded on reviews, and it is NOT derivable
+    # from app_id. `gh` reports the login as '<slug>' while REST reports
+    # '<slug>[bot]' (#9), so a login comparison across surfaces silently matches
+    # nothing — the state machine matches on this number alone.
+    BOT_USER_ID=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq '.id' 2>/dev/null || true)
+    if [[ -n "$BOT_USER_ID" ]]; then
+      write_env BOT_USER_ID "$BOT_USER_ID"
+      printf '  %s✓ bot user%s %s[bot] → id %s\n' "$GREEN" "$RESET" "$APP_SLUG" "$BOT_USER_ID"
     else
-      REPOS=$(GH_TOKEN="$TOKEN" gh api /installation/repositories \
-                --jq '.repositories[].full_name' 2>/dev/null || true)
-      printf '  %s✓ token minted%s (expires in 1 hour, never written to disk)\n' "$GREEN" "$RESET"
-      if printf '%s\n' "$REPOS" | grep -qx "$TARGET_REPO"; then
-        printf '  %s✓ token reaches%s %s\n' "$GREEN" "$RESET" "$TARGET_REPO"
+      warn "couldn't resolve ${APP_SLUG}[bot] — record the bot user id by hand"
+      SKIPPED+=("record BOT_USER_ID: gh api /users/${APP_SLUG}%5Bbot%5D --jq .id")
+    fi
+
+    INSTALLATION_ID=$(app_api "$JWT" /app/installations | jq -r --arg r "$TARGET_REPO" '
+        map(select(.account.login == ($r | split("/") | .[0]))) | .[0].id // empty' || true)
+
+    if [[ -z "$INSTALLATION_ID" ]]; then
+      warn "the app reports no installation — did stage 3 complete?"
+      SKIPPED+=("install the app on $TARGET_REPO, then re-run this wizard")
+    else
+      write_env INSTALLATION_ID "$INSTALLATION_ID"
+
+      TOKEN=$(app_api "$JWT" "/app/installations/$INSTALLATION_ID/access_tokens" \
+                -X POST | jq -r '.token // empty' || true)
+
+      if [[ -z "$TOKEN" ]]; then
+        warn "could not mint an installation token"
+        SKIPPED+=("mint an installation token — check the App ID and key match")
       else
-        warn "token works but doesn't reach $TARGET_REPO — it sees: ${REPOS:-nothing}"
-        SKIPPED+=("re-scope the installation to include $TARGET_REPO")
+        REPOS=$(GH_TOKEN="$TOKEN" gh api /installation/repositories \
+                  --jq '.repositories[].full_name' 2>/dev/null || true)
+        printf '  %s✓ token minted%s (expires in 1 hour, never written to disk)\n' "$GREEN" "$RESET"
+        if printf '%s\n' "$REPOS" | grep -qx "$TARGET_REPO"; then
+          printf '  %s✓ token reaches%s %s\n' "$GREEN" "$RESET" "$TARGET_REPO"
+          EXTRA=$(printf '%s\n' "$REPOS" | grep -vx "$TARGET_REPO" | grep -v '^$' || true)
+          if [[ -n "$EXTRA" ]]; then
+            warn "the installation is scoped wider than the target repo. It also reaches:"
+            while read -r r; do [[ -n "$r" ]] && note "  - $r"; done <<<"$EXTRA"
+            SKIPPED+=("narrow the installation to $TARGET_REPO only")
+          fi
+        else
+          warn "token works but doesn't reach $TARGET_REPO — it sees: ${REPOS:-nothing}"
+          SKIPPED+=("re-scope the installation to include $TARGET_REPO")
+        fi
       fi
     fi
   fi
@@ -340,7 +438,12 @@ fi
 pause
 
 finish
-say "Next: the approval smoke test (issue #15, steps 5-8) — run from Claude:"
-note "  open a throwaway PR on $TARGET_REPO as $ACCOUNT, then attempt"
-note "  GH_TOKEN=<installation-token> gh pr review <n> --approve"
+say "$PERSONA ($ROLE) — the handles later tickets and .my-team/config.toml depend on:"
+note "  app_id .......... ${APP_ID:-?}"
+note "  bot user id ..... ${BOT_USER_ID:-?}   ← reviews are matched on this, never the login"
+note "  installation_id . ${INSTALLATION_ID:-?}"
+note "  private key ..... $PEM_PATH"
+printf '\n'
+say "Next: record these on mcnewcp/my-team#16 — once all three roles are done."
+warn "Never paste a private key or an installation token into an issue."
 printf '\n'
