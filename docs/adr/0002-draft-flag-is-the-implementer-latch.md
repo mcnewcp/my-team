@@ -45,13 +45,21 @@ what matters there is that the implementer is the author, so GitHub's refusal to
 approve its own pull request still bites — but the *act* is no longer an agent's. Nothing has to
 invent a conventional-commit title before the work is done.
 
-Merge is locked by the platform for free: GitHub refuses to merge a draft, so no orchestrator
-policy is needed to prevent merging mid-revision.
+Merge is locked by the platform for free: GitHub refuses to merge a draft — measured, an
+attempted merge on a draft returns `405 "Pull Request is still a draft"` — so no orchestrator
+policy is needed to prevent merging mid-revision. The lock bites at merge time and is **not**
+visible in the status beforehand: a draft reports `mergeStateStatus: CLEAN`, stably, and not as
+the settling lag described at the end of this document. `isDraft` has to be checked before that
+field is read as a merge gate, or the machine will attempt a merge the platform has already
+decided to refuse.
 
 Converting to draft was measured to be inert — reviews, their states, their pinned SHAs and their
 timestamps all survive it byte-identically, and a GitHub App can drive both directions with only
-`pull_requests: write`. The one path where conversion *is* destructive is pending review
-requests, which GitHub drops. Nothing here may come to depend on review requests as signal.
+`pull_requests: write`. Re-measured under a branch protection rule with `dismiss_stale_reviews`
+enabled, which is the rule most likely to be suspected of interacting with the latch, a full
+ready → draft → ready round trip is still inert. The one path where conversion *is* destructive
+is pending review requests, which GitHub drops. Nothing here may come to depend on review
+requests as signal.
 
 Two flag transitions per round land in the pull request timeline as `convert_to_draft` and
 `ready_for_review` events, which makes implementation rounds countable and stalls measurable
@@ -71,6 +79,21 @@ zero approvals makes GitHub stop computing the field. A machine gated on it woul
 and give no reason. Filtering by *numeric* id rather than login matters for the same reason: the
 REST and GraphQL surfaces disagree on whether a bot's login carries the `[bot]` suffix, so a
 string comparison across them silently matches nothing.
+
+The pinned-SHA comparison is load-bearing for the same kind of reason, and the platform's own
+staleness tracking is not a substitute for it. Under a rule with `dismiss_stale_reviews` enabled,
+a push after approval rewrites the review in place to `DISMISSED`, which agrees with the
+comparison. But with that rule *off*, the same push leaves the review `APPROVED` pinned to the
+superseded SHA, `reviewDecision` still `APPROVED` and `mergeStateStatus` still `CLEAN` — GitHub
+will merge a tree nobody reviewed. And enabling the rule *after* the fact gates the merge
+correctly while still reporting the review as `APPROVED`. A machine reading `state` is wrong in
+two of those three cases; one comparing the pinned SHA to the head is right in all three. The
+protection rule was never observed to disagree with the comparison, only to stay silent — which
+is what makes it belt-and-braces rather than something to depend on.
+
+Reviews accumulate rather than replace. A single identity can appear more than once in the list —
+a `DISMISSED` review and a later `APPROVED` one under the same numeric id — so the filter takes
+the latest by pinned SHA, not any match.
 
 The corollary is that an observation must be coherent before it is trusted. A pull request's head
 SHA lags a push by several seconds while GitHub reports `mergeable_state: "unknown"`, and during
