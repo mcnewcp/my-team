@@ -18,6 +18,10 @@ _Avoid_: client repo, downstream repo, consumer repo
 The per-issue directory an agent works in — a `git worktree` of the target repo, plus that issue's handoffs alongside it. Lives outside every repo and is discarded when the issue merges.
 _Avoid_: sandbox, checkout, workdir
 
+**Fixture repo**:
+A repo that exists only to be observed — where a test constructs a real pull request, a real stale review or a real red check run so the orchestrator can be pointed at the genuine article. Holds a small permanent project to work on; everything else in it is generated and disposable.
+_Avoid_: sandbox, scratch repo, test repo
+
 ### The loop
 
 **Tick**:
@@ -81,3 +85,9 @@ _Avoid_: checkpoint, summary, context dump
 **Verify by observation**:
 Establishing what happened by inspecting the target repo directly — new commits, green tests, a PR that links its issue — rather than by trusting an agent's account of its own work. The rule that governs every state transition the orchestrator can check for itself.
 _Avoid_: validation, confirmation
+
+### Proving it
+
+**Acceptance run**:
+One issue taken through the whole loop to a merged pull request in a real target repo, unattended — the proof that the tool works, performed on work that was genuinely wanted. Its repeatable counterpart is the **release rehearsal**, which puts the same loop through the fixture repo before each release.
+_Avoid_: smoke test, e2e, integration test
