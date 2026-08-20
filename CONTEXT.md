@@ -33,12 +33,8 @@ An identity with authority — the implementer, the reviewer, the judge. A role 
 _Avoid_: worker, bot, agent
 
 **Action**:
-One unit of work a tick dispatches: one harness session, one skill, one definition of done. Several actions belong to the same role — the implementer both writes the code and opens the PR.
+One unit of work a tick dispatches: one role, one definition of done. Normally a single harness session running a single skill — a session stopped at the **smart zone** is resumed once to write a **handoff**, which is the tail of the same action rather than a new one. A tick may wrap an action with mechanical steps the orchestrator performs itself, such as pushing the branch afterwards. Several actions belong to the same role: the implementer runs again on every revision round.
 _Avoid_: job, step, task
-
-**Persona**:
-The name and voice attached to a role — Robin implements, Shane reviews, Lewis judges. Lives in the orchestrator and is injected at dispatch; never in a skill file, so a human running the skill by hand gets the behaviour without the character. A persona colours the prose it writes; it never announces itself.
-_Avoid_: character, personality
 
 ### State and narration
 
@@ -57,6 +53,10 @@ _Avoid_: signal, report, claim
 **Narration**:
 What humans read — reasoning, progress, and the events a future feed or board view would render. Never an input to an orchestrator decision. Distinct from **state**, and free to live outside GitHub as long as it is reachable by a link from it.
 _Avoid_: logs, chatter, output
+
+**Sink**:
+A consumer of **narration**. Sinks subscribe; nothing in the loop asks one what to do. A tick emits what happened and each sink decides what to render — the terminal shows the whole run, the pull request conversation takes only an action's closing report. A new surface is a new sink, never a new branch in the loop.
+_Avoid_: handler, listener, reporter, channel
 
 **Smart zone**:
 The span of context within which a model still works well, far below the window's true ceiling. One absolute token count, set once for the whole team; crossing it is what stops a dispatch and calls for a **handoff**.
