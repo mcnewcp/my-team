@@ -32,15 +32,27 @@ _Avoid_: backend, provider, engine, model
 An identity with authority — the implementer, the reviewer, the judge. A role holds its own credential and is what GitHub sees acting. Roles are provisioned once and perform many actions.
 _Avoid_: worker, bot, agent
 
+**Product owner**:
+The human the loop works for and escalates to. One GitHub login per target repo, and the only person the orchestrator ever addresses by name.
+_Avoid_: owner, maintainer, user
+
 **Action**:
 One unit of work a tick dispatches: one role, one definition of done. Normally a single harness session running a single skill — a session stopped at the **smart zone** is resumed once to write a **handoff**, which is the tail of the same action rather than a new one. A tick may wrap an action with mechanical steps the orchestrator performs itself, such as pushing the branch afterwards. Several actions belong to the same role: the implementer runs again on every revision round.
 _Avoid_: job, step, task
+
+**Escalation**:
+Handing an issue back to the **product owner**: the orchestrator swaps `ready-for-agent` for `ready-for-human`, states in one comment which limit tripped and on what evidence, and exits. The counterpart to halting, which stops without asking for anything because the human is already acting.
+_Avoid_: failure, abort, bail
 
 ### State and narration
 
 **Observation**:
 The single snapshot of the target repo's GitHub state that one tick reads before it acts — the issue, the remote branch, the PR, its reviews, the checks at the current head, and the PR timeline. Local git inside the workspace is never part of it. A tick observes once; everything it decides comes from that one snapshot.
 _Avoid_: poll, scan, read
+
+**Progress event**:
+An externally caused fact proving the issue moved — a new commit, a review submitted, a check run completing. It excludes the draft transitions the orchestrator performs itself: the loop's own bookkeeping is not progress, and counting it as such would let a livelock hold the stall detector open forever.
+_Avoid_: activity, heartbeat, update
 
 **State**:
 The derived value naming where an issue sits in the loop. Computed from an Observation, never stored, and never written anywhere: the same Observation always yields the same State. The set is fixed and ordered, and the order is what breaks ties between states that look alike.
