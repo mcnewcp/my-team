@@ -40,6 +40,10 @@ _Avoid_: worker, bot, agent
 The human the loop works for and escalates to. One GitHub login per target repo, and the only person the orchestrator ever addresses by name.
 _Avoid_: owner, maintainer, user
 
+**Trusted human**:
+A GitHub user whose association with the **target repo** is `OWNER`, `MEMBER` or `COLLABORATOR`, read from the platform on every observation rather than listed in config. Their prose may enter a prompt and their approval counts; no GitHub App is ever one, the **roles** included.
+_Avoid_: allowlist, trusted user, maintainer
+
 **Action**:
 One unit of work a tick dispatches: one role, one definition of done. Normally a single harness session running a single skill — a session stopped at the **smart zone** is resumed once to write a **handoff**, which is the tail of the same action rather than a new one. A tick may wrap an action with mechanical steps the orchestrator performs itself, such as pushing the branch afterwards. Several actions belong to the same role: the implementer runs again on every revision round.
 _Avoid_: job, step, task
@@ -47,6 +51,10 @@ _Avoid_: job, step, task
 **Escalation**:
 Handing an issue back to the **product owner**: the orchestrator swaps `ready-for-agent` for `ready-for-human`, states in one comment which limit tripped and on what evidence, and exits. The counterpart to halting, which stops without asking for anything because the human is already acting.
 _Avoid_: failure, abort, bail
+
+**Authorization**:
+A **trusted human** applying `ready-for-agent` to an issue body they have read — the act that admits an issue to the loop. It lapses if the body is edited by an untrusted editor afterwards, and **escalation** revokes it.
+_Avoid_: approval, permission, gate, sign-off
 
 ### State and narration
 
