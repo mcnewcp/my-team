@@ -194,15 +194,15 @@ KEY_DIR="$CONFIG_DIR/keys"
 
 # ── The v0.1 roster ───────────────────────────────────────────────────────
 # Three roles, settled in mcnewcp/my-team#7; the per-role permission sets in
-# its context-pointer comment on #16. Keys and config are keyed on the *role*
-# — a persona is a presentation layer and may be recast without re-provisioning.
+# its context-pointer comment on #16. Role is the only name in play — #10 took
+# personas out of v0.1, so the App, the key and the config all share it.
 #
-#   role_meta ROLE -> "persona<TAB>contents<TAB>pull requests<TAB>issues"
+#   role_meta ROLE -> "contents<TAB>pull requests<TAB>issues"
 role_meta() {
   case "$1" in
-    implementer) printf 'robin\tRead and write\tRead and write\tRead-only' ;;
-    reviewer)    printf 'shane\tRead-only\tRead and write\tRead-only' ;;
-    judge)       printf 'lewis\tRead and write\tRead and write\tRead and write' ;;
+    implementer) printf 'Read and write\tRead and write\tRead-only' ;;
+    reviewer)    printf 'Read-only\tRead and write\tRead-only' ;;
+    judge)       printf 'Read and write\tRead and write\tRead and write' ;;
     *)           return 1 ;;
   esac
 }
@@ -247,7 +247,7 @@ if ! META=$(role_meta "$ROLE"); then
   printf '\n'
   exit 1
 fi
-IFS=$'\t' read -r PERSONA PERM_CONTENTS PERM_PULLS PERM_ISSUES <<<"$META"
+IFS=$'\t' read -r PERM_CONTENTS PERM_PULLS PERM_ISSUES <<<"$META"
 
 ENV_FILE="$CONFIG_DIR/$ROLE.env"          # non-secret ids only; lives outside every repo
 PEM_PATH="$KEY_DIR/$ROLE.pem"
@@ -273,7 +273,7 @@ fi
 TOTAL_STAGES=4
 (( RESYNC )) && TOTAL_STAGES=1
 
-banner "my-team — $PERSONA ($ROLE)"
+banner "my-team — $ROLE"
 note "ids → $ENV_FILE   key → $PEM_PATH"
 pause "Press Enter to begin."
 
@@ -283,13 +283,13 @@ if (( ! RESYNC )); then
 stage "Register the GitHub App"
 say "This is the long one: one form, then Create. Everything else is quick."
 open_url "https://github.com/settings/apps/new"
-step "GitHub App name — must be globally unique across GitHub. Use: $PERSONA-my-team"
-note "Persona-named, not role-named (#7): the App's byline is where the persona"
-note "is actually visible. Renaming later is safe — config keys on app_id."
+step "GitHub App name — must be globally unique across GitHub. Use: $ROLE-my-team"
+note "Role-named (#10): v0.1 ships no personas, so the byline is the role itself."
+note "Renaming later is safe — config keys on app_id, never on the name."
 step "Homepage URL — https://github.com/$ACCOUNT/my-team"
 step "Webhook — UNCHECK 'Active'. This removes the URL / secret / SSL fields."
 say ""
-say "Repository permissions for $PERSONA — leave every other one at 'No access':"
+say "Repository permissions for $ROLE — leave every other one at 'No access':"
 step "Contents ............ $PERM_CONTENTS"
 step "Pull requests ....... $PERM_PULLS"
 step "Issues .............. $PERM_ISSUES"
@@ -337,8 +337,8 @@ else
   mv "$SRC_PEM" "$PEM_PATH"
   chmod 600 "$PEM_PATH"
   printf '  %s✓ key stored%s %s (mode 600, outside every repo)\n' "$GREEN" "$RESET" "$PEM_PATH"
-  note "Named for the role, not the persona: config resolves role → {app_id, key_path},"
-  note "so recasting a persona never moves a file."
+  note "Named for the role, matching the App: config resolves role → {app_id, key_path},"
+  note "so nothing has to remember which name loads which key."
 fi
 pause
 
@@ -383,11 +383,10 @@ else
     fi
     APP_SLUG="$LIVE_SLUG"
     write_env ROLE "$ROLE"
-    write_env PERSONA "$PERSONA"
     write_env APP_SLUG "$APP_SLUG"
-    if [[ "$LIVE_NAME" != "$PERSONA-my-team" ]]; then
-      warn "App is named '$LIVE_NAME', but #7 wants '$PERSONA-my-team' for the $ROLE role."
-      SKIPPED+=("rename the App to $PERSONA-my-team (ids and installation survive a rename)")
+    if [[ "$LIVE_NAME" != "$ROLE-my-team" ]]; then
+      warn "App is named '$LIVE_NAME', but #10 wants '$ROLE-my-team' for the $ROLE role."
+      SKIPPED+=("rename the App to $ROLE-my-team (ids and installation survive a rename)")
     fi
 
     # The bot user id is the actor recorded on reviews, and it is NOT derivable
@@ -449,7 +448,7 @@ fi
 pause
 
 finish
-say "$PERSONA ($ROLE) — the handles later tickets and .my-team/config.toml depend on:"
+say "$ROLE — the handles later tickets and .my-team/config.toml depend on:"
 note "  app_id .......... ${APP_ID:-?}"
 note "  bot user id ..... ${BOT_USER_ID:-?}   ← reviews are matched on this, never the login"
 note "  installation_id . ${INSTALLATION_ID:-?}"
