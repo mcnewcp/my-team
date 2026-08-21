@@ -1,9 +1,20 @@
 # my-team
 
-Agent skills are installed under `.agents/skills/` (source of truth) and surfaced to
-Claude Code via symlinks in `.claude/skills/`. `skills-lock.json` pins their versions.
-Skills authored in this repo rather than vendored — currently `create-pr` — have no
-lockfile entry.
+## Skill directories
+
+Three trees hold skills. They look alike and behave differently — know which one you are
+editing.
+
+| tree | what it is | loaded here? |
+| --- | --- | --- |
+| `.agents/skills/<name>/` | **This repo's own skills**, maintained here. Symlinked into `.claude/skills/<name>`: `.agents/skills` is Codex's repo skill root and `.claude/skills` is Claude Code's, so one copy serves both. Originally vendored from an upstream set; that link is cut and these are now ours to change. | yes |
+| `src/my_team/payload/skills/mt-<name>/` | **Product data** — the skill payload `my-team` installs into a target repo, shipped inside the Python package. It looks exactly like a skill and is not one: nothing loads it, and editing it changes nothing until `my-team sync` runs. *(Arrives with the CLI; not present yet.)* | **no** |
+| `.agents/skills/mt-<name>/` | The payload **after** `my-team sync` has been run against this repo, which is a target repo like any other. Owned by `.my-team/skills-manifest.json` — never hand-edit, use `my-team eject`. | yes |
+
+Payload skills carry the `mt-` prefix so they can never collide with the skills in row one,
+or be shadowed by a personal `~/.claude/skills/` entry. See
+[ADR 0007](docs/adr/0007-payload-skill-names-are-prefixed.md) and
+[ADR 0008](docs/adr/0008-the-payload-is-installed-into-the-target-repo.md).
 
 ## Agent skills
 
