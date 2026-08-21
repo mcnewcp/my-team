@@ -45,7 +45,7 @@ The human the loop works for and escalates to. One GitHub login per target repo,
 _Avoid_: owner, maintainer, user
 
 **Trusted human**:
-A GitHub user whose association with the **target repo** is `OWNER`, `MEMBER` or `COLLABORATOR`, read from the platform on every observation rather than listed in config. Their prose may enter a prompt and their approval counts; no GitHub App is ever one, the **roles** included.
+A GitHub user whose association with the **target repo** is `OWNER`, `MEMBER` or `COLLABORATOR`, read from the platform on every observation rather than listed in config. Their prose is what an agent is told to act on and their approval counts; no GitHub App is ever one, the **roles** included.
 _Avoid_: allowlist, trusted user, maintainer
 
 **Action**:
@@ -89,6 +89,10 @@ _Avoid_: logs, chatter, output
 **Sink**:
 A consumer of **narration**. Sinks subscribe; nothing in the loop asks one what to do. A tick emits what happened and each sink decides what to render — the terminal shows the whole run, the pull request conversation takes only an action's closing report. A new surface is a new sink, never a new branch in the loop.
 _Avoid_: handler, listener, reporter, channel
+
+**Briefing**:
+What the orchestrator hands a **role** at the start of an **action**, and the counterpart to its **Report** at the end: only what the role cannot look up for itself — which issue, which identities are in play, which checks are the gate, and where a **handoff** waits. It never names a counter, a limit, or the **state**.
+_Avoid_: context block, instructions, preamble
 
 **Report**:
 What a **role** says at the end of an **action** — the closing message the orchestrator posts to the pull request conversation on its behalf. It carries what the artifacts cannot: what the role deviated from, the judgment calls worth another pair of eyes, and anything it guessed at or was blocked on. It never restates what the role already wrote to the pull request itself, and like all **narration** it is never an input to an orchestrator decision.
