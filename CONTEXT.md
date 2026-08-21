@@ -32,6 +32,10 @@ _Avoid_: step, cycle, iteration
 An AI coding tool that `my-team` drives to do the actual engineering — Claude Code, later Codex. `my-team` wires harnesses together; it does not replace them.
 _Avoid_: backend, provider, engine, model
 
+**Skill payload**:
+The skills `my-team` installs into a **target repo** — the procedures its **roles** run, and the only part of the tool a human can invoke by hand and get the same behaviour from. Membership is a closure: a skill belongs because the loop dispatches it or another payload skill names it, never because it is merely useful.
+_Avoid_: bundle, kit, templates, prompts
+
 **Role**:
 An identity with authority — the implementer, the reviewer, the judge. A role holds its own credential and is what GitHub sees acting. Roles are provisioned once and perform many actions.
 _Avoid_: worker, bot, agent
@@ -47,6 +51,10 @@ _Avoid_: allowlist, trusted user, maintainer
 **Action**:
 One unit of work a tick dispatches: one role, one definition of done. Normally a single harness session running a single skill — a session stopped at the **smart zone** is resumed once to write a **handoff**, which is the tail of the same action rather than a new one. A tick may wrap an action with mechanical steps the orchestrator performs itself, such as pushing the branch afterwards. Several actions belong to the same role: the implementer runs again on every revision round.
 _Avoid_: job, step, task
+
+**Disposal**:
+The judge's ruling on one of the reviewer's points, of which there are exactly three: **necessary now**, **worth keeping** — filed as a fresh issue — or **dropped**. Every point gets exactly one, and there is no non-blocking fourth, because nothing in the loop would ever read it.
+_Avoid_: verdict, triage, ruling, severity
 
 **Escalation**:
 Handing an issue back to the **product owner**: the orchestrator swaps `ready-for-agent` for `ready-for-human`, states in one comment which limit tripped and on what evidence, and exits. The counterpart to halting, which stops without asking for anything because the human is already acting.
@@ -81,6 +89,10 @@ _Avoid_: logs, chatter, output
 **Sink**:
 A consumer of **narration**. Sinks subscribe; nothing in the loop asks one what to do. A tick emits what happened and each sink decides what to render — the terminal shows the whole run, the pull request conversation takes only an action's closing report. A new surface is a new sink, never a new branch in the loop.
 _Avoid_: handler, listener, reporter, channel
+
+**Report**:
+What a **role** says at the end of an **action** — the closing message the orchestrator posts to the pull request conversation on its behalf. It carries what the artifacts cannot: what the role deviated from, the judgment calls worth another pair of eyes, and anything it guessed at or was blocked on. It never restates what the role already wrote to the pull request itself, and like all **narration** it is never an input to an orchestrator decision.
+_Avoid_: summary, output, final message, log
 
 **Smart zone**:
 The span of context within which a model still works well, far below the window's true ceiling. One absolute token count, set once for the whole team; crossing it is what stops a dispatch and calls for a **handoff**.
