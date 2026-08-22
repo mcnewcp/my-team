@@ -52,6 +52,13 @@ _Avoid_: allowlist, trusted user, maintainer
 One unit of work a tick dispatches: one role, one definition of done. Normally a single harness session running a single skill — a session stopped at the **smart zone** is resumed once to write a **handoff**, which is the tail of the same action rather than a new one. A tick may wrap an action with mechanical steps the orchestrator performs itself, such as pushing the branch afterwards. Several actions belong to the same role: the implementer runs again on every revision round.
 _Avoid_: job, step, task
 
+**Round**:
+One lap of the loop: the orchestrator hands the pull request to the implementer, and the
+implementer hands it back. Bracketed by the draft flag, so rounds are countable from the timeline
+rather than remembered. A round that revises, a round that repairs a red check and a round that
+rebases a conflict are the same kind of thing and are counted together.
+_Avoid_: iteration, pass, attempt, turn
+
 **Disposal**:
 The judge's ruling on one of the reviewer's points, of which there are exactly three: **necessary now**, **worth keeping** — filed as a fresh issue — or **dropped**. Every point gets exactly one, and there is no non-blocking fourth, because nothing in the loop would ever read it.
 _Avoid_: verdict, triage, ruling, severity
@@ -77,6 +84,15 @@ _Avoid_: activity, heartbeat, update
 **State**:
 The derived value naming where an issue sits in the loop. Computed from an Observation, never stored, and never written anywhere: the same Observation always yields the same State. The set is fixed and ordered, and the order is what breaks ties between states that look alike.
 _Avoid_: status, phase, stage
+
+**Ladder**:
+The ordered list of guarded rows from which **State** is derived — evaluated top to bottom, first
+match wins. The order is the ambiguity-breaker between states that look alike from one snapshot,
+so it is part of the design rather than an implementation detail, and the ladder is data the tests
+can enumerate rather than a chain of branches. Every row whose action is a dispatch has a guard
+that is the negation of that action's definition of done, which is what makes a re-fire a retry
+rather than a livelock.
+_Avoid_: rules, dispatch table, decision tree, chain
 
 **Declaration**:
 An observable act by which a role asserts something the orchestrator cannot verify for itself — the counterpart to **Verify by observation**. A Declaration is always a deliberate API call attributable to a role identity, never prose the orchestrator reads. Exactly two exist: the implementer marking its pull request ready, and the judge submitting a formal review.
