@@ -25,7 +25,7 @@ def declared_version() -> str:
     return str(tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["project"]["version"])
 
 
-def test_version_reports_the_version_the_package_declares(capsys: pytest.CaptureFixture[str]) -> None:
+def test_version_reports_the_declared_version(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as caught:
         main(["--version"])
 

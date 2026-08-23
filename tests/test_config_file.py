@@ -70,7 +70,7 @@ def test_malformed_toml_names_the_path(tmp_path: Path) -> None:
 
 
 def test_a_bad_key_names_both_the_path_and_the_key(tmp_path: Path) -> None:
-    write_config(tmp_path, WELL_FORMED.replace('required_checks = []', ""))
+    write_config(tmp_path, WELL_FORMED.replace("required_checks = []", ""))
 
     with pytest.raises(ConfigError) as caught:
         load_config(tmp_path)
