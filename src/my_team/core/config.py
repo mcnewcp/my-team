@@ -24,7 +24,10 @@ from typing import Final, TypedDict
 
 
 class ConfigError(ValueError):
-    """A config that cannot be turned into a `Config`. The message names the key."""
+    """A config that will not hold — raised by the parser and by `Config` itself.
+
+    The message names the key at fault, and both keys where the rule spans two of them.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,7 +215,10 @@ def parse_config(data: Mapping[str, object]) -> Config:
     a setting.
 
     Every rule that reads more than one key at once belongs to `Config` itself, so this
-    function only ever checks a key against its own type and floor.
+    function only ever checks a key against its own type and floor. Those floors are
+    still this function's own, though: a `Config` built without passing through here
+    can hold a zero-minute action budget, so a non-file config source has to bring its
+    own floors until they move onto the model too.
     """
     table = _Table(data, "")
     table.reject_unknown(_TOP_LEVEL_KEYS)

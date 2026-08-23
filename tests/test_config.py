@@ -339,11 +339,17 @@ def test_every_optional_key_is_read_from_the_file(key: str) -> None:
     assert getattr(parse_config(minimal(**{key: declared})), key) == declared
 
 
-@pytest.mark.parametrize(("stall", "action"), [(30, 30), (29, 30)])
-def test_the_stall_clock_must_outlast_one_dispatch(stall: int, action: int) -> None:
-    # Otherwise one slow dispatch trips the detector watching it.
-    with pytest.raises(ConfigError, match="max_stall_minutes"):
-        parse_config(minimal(max_stall_minutes=stall, max_action_minutes=action))
+def test_the_stall_clock_must_outlast_one_dispatch() -> None:
+    # Otherwise one slow dispatch trips the detector watching it. The parser owns no
+    # copy of this rule any more, so what is asserted here is that it still routes
+    # through the model's — down to the message a mistyped file already produced.
+    with pytest.raises(ConfigError) as raised:
+        parse_config(minimal(max_stall_minutes=30, max_action_minutes=30))
+
+    assert str(raised.value) == (
+        "max_stall_minutes (30) must exceed max_action_minutes (30), "
+        "or one slow dispatch trips the stall detector"
+    )
 
 
 def test_the_stall_clock_may_be_one_minute_longer_than_a_dispatch() -> None:
