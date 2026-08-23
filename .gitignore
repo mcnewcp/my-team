@@ -1,23 +1,31 @@
-# Python
+# A pattern here is read twice: by git, and by hatchling, which builds the wheel from
+# whatever git would not ignore. So an unanchored pattern that happens to match a path
+# inside the package removes that file from the wheel *and* from what the packaging test
+# expects the wheel to hold — the two agree, and ship an incomplete package quietly.
+#
+# The rule that keeps them honest: leave a pattern unanchored only when hatchling also
+# drops that name at any depth (its EXCLUDED_DIRECTORIES / EXCLUDED_FILES, plus *.py[cdo]).
+# Anchor everything else to the root it was always about.
+
+# Python. Bytecode and the in-tree virtualenv are junk wherever they appear, and
+# hatchling agrees.
 __pycache__/
 *.py[cod]
 .venv/
-venv/
+/venv/
 
-# Tool caches
+# Tool caches. Written in the rootdir, and dropped by hatchling at any depth.
 .pytest_cache/
 .ruff_cache/
-
-# Coverage
-.coverage
-htmlcov/
-
-# Type checker cache
 .mypy_cache/
 
-# Build artifacts
-dist/
-*.egg-info/
+# Coverage output. Root only — hatchling would ship a `htmlcov/` sitting in the package.
+/.coverage
+/htmlcov/
+
+# Build artifacts. Root only, for the same reason.
+/dist/
+/*.egg-info/
 
 # macOS. Hatchling drops this from a build unconditionally, so the packaging test's
 # two sides only agree on what counts as source if git drops it too.
