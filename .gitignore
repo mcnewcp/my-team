@@ -3,12 +3,14 @@
 # inside the package removes that file from the wheel *and* from what the packaging test
 # expects the wheel to hold — the two agree, and ship an incomplete package quietly.
 #
-# The rule that keeps them honest: leave a pattern unanchored only when hatchling also
-# drops that name at any depth (its EXCLUDED_DIRECTORIES / EXCLUDED_FILES, plus *.py[cdo]).
-# Anchor everything else to the root it was always about.
+# The rule that keeps them honest: leave a pattern unanchored only when the name is junk
+# at every depth, so that dropping it everywhere is the right answer — hatchling's own
+# EXCLUDED_DIRECTORIES and EXCLUDED_FILES, plus bytecode. Anchor everything else to the
+# root it was always about. Nothing checks this — the suite cannot, because a violation
+# makes both sides drop the same file and agree.
 
-# Python. Bytecode and the in-tree virtualenv are junk wherever they appear, and
-# hatchling agrees.
+# Python. Bytecode and the in-tree virtualenv are junk wherever they appear. Hatchling
+# drops `__pycache__` and `.venv` itself; bytecode it drops only by reading this line.
 __pycache__/
 *.py[cod]
 .venv/
