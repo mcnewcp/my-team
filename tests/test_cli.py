@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from my_team.cli import main
+from my_team.cli import ExitCode, main
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONSOLE_SCRIPT = Path(sys.executable).parent / "my-team"
@@ -55,8 +55,18 @@ def test_a_usage_error_exits_one_rather_than_two(capsys: pytest.CaptureFixture[s
     with pytest.raises(SystemExit) as caught:
         main(["--not-a-flag"])
 
-    assert caught.value.code == 1
+    assert caught.value.code == ExitCode.ERROR
     assert "my-team: error:" in capsys.readouterr().err
+
+
+def test_the_exit_codes_are_the_documented_table() -> None:
+    assert [(code.name, code.value) for code in ExitCode] == [
+        ("MERGED", 0),
+        ("ERROR", 1),
+        ("ESCALATED", 2),
+        ("AWAITING_APPROVAL", 3),
+        ("HALTED", 4),
+    ]
 
 
 @pytest.mark.parametrize("flag", ["--version", "--help"])

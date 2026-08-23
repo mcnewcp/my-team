@@ -192,6 +192,9 @@ def parse_config(data: Mapping[str, object]) -> Config:
     `0` disables the three round limits, so they floor at zero. The rest floor at one:
     the stall clock is the one limit that cannot be disabled, and a zero-second poll or
     a zero-token smart zone is a spin rather than a setting.
+
+    One relationship holds between two keys rather than within one: the stall clock has
+    to outlast a single dispatch, or one slow action trips the detector watching it.
     """
     table = _Table(data, "")
     table.reject_unknown(_TOP_LEVEL_KEYS)
@@ -218,12 +221,18 @@ def parse_config(data: Mapping[str, object]) -> Config:
     if table.has("poll_interval"):
         optional["poll_interval"] = table.integer("poll_interval", minimum=1)
 
-    return Config(
+    config = Config(
         product_owner=table.string("product_owner"),
         required_checks=table.strings("required_checks"),
         roles=_parse_roles(table.table("roles")),
         **optional,
     )
+    if config.max_stall_minutes <= config.max_action_minutes:
+        raise ConfigError(
+            f"max_stall_minutes ({config.max_stall_minutes}) must exceed max_action_minutes "
+            f"({config.max_action_minutes}), or one slow dispatch trips the stall detector"
+        )
+    return config
 
 
 def _parse_roles(table: _Table) -> Roles:

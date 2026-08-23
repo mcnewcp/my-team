@@ -11,20 +11,33 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from enum import IntEnum
 from importlib import metadata
 from typing import NoReturn
 
 PROGRAM = "my-team"
 
-USAGE_ERROR = 1
-"""Exit `1` (error), not argparse's default `2`, which is reserved for "escalated"."""
+
+class ExitCode(IntEnum):
+    """What the process exits with, so a wrapper script never parses output.
+
+    The likeliest way a human meets one of these is running `work` on an issue that is
+    already parked, which is why each one prints why. A usage error takes `ERROR`
+    rather than argparse's own `2`, which would claim an escalation that never happened.
+    """
+
+    MERGED = 0
+    ERROR = 1
+    ESCALATED = 2
+    AWAITING_APPROVAL = 3
+    HALTED = 4
 
 
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
         self.print_usage(sys.stderr)
         sys.stderr.write(f"{self.prog}: error: {message}\n")
-        raise SystemExit(USAGE_ERROR)
+        raise SystemExit(ExitCode.ERROR)
 
 
 def build_parser() -> argparse.ArgumentParser:

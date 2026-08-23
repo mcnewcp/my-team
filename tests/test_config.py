@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import fields
+from dataclasses import MISSING, fields
 from pathlib import Path
 from typing import Any
 
@@ -196,6 +196,8 @@ def test_an_unknown_key_inside_a_role_is_named() -> None:
         (minimal(model=3), "model"),
         (minimal(require_approval_to_merge="yes"), "require_approval_to_merge"),
         (minimal(smart_zone_tokens="60000"), "smart_zone_tokens"),
+        (minimal(smart_zone_tokens=1.5), "smart_zone_tokens"),
+        (minimal(product_owner={"login": "mcnewcp"}), "product_owner"),
         (minimal(max_rounds=True), "max_rounds"),
         (minimal(roles=[]), "roles"),
     ],
@@ -306,5 +308,33 @@ def test_a_role_keys_on_numeric_ids_and_never_on_a_slug() -> None:
     assert isinstance(role.installation_id, int)
 
 
-def test_the_three_roles_are_named_fields_rather_than_a_lookup() -> None:
-    assert {f.name for f in fields(Roles)} == {"implementer", "reviewer", "judge"}
+DEFAULTS = {f.name: f.default for f in fields(Config) if f.default is not MISSING}
+
+
+def a_value_other_than(default: object) -> object:
+    if isinstance(default, bool):
+        return not default
+    if isinstance(default, int):
+        return default + 1
+    return "changed"
+
+
+@pytest.mark.parametrize("key", sorted(DEFAULTS))
+def test_every_optional_key_is_read_from_the_file(key: str) -> None:
+    """A key that reached the model but not the parser would be silently ignored."""
+    declared = a_value_other_than(DEFAULTS[key])
+
+    assert getattr(parse_config(minimal(**{key: declared})), key) == declared
+
+
+@pytest.mark.parametrize(("stall", "action"), [(30, 30), (29, 30)])
+def test_the_stall_clock_must_outlast_one_dispatch(stall: int, action: int) -> None:
+    # Otherwise one slow dispatch trips the detector watching it.
+    with pytest.raises(ConfigError, match="max_stall_minutes"):
+        parse_config(minimal(max_stall_minutes=stall, max_action_minutes=action))
+
+
+def test_the_stall_clock_may_be_one_minute_longer_than_a_dispatch() -> None:
+    config = parse_config(minimal(max_stall_minutes=31, max_action_minutes=30))
+
+    assert config.max_stall_minutes == 31

@@ -53,7 +53,7 @@ jobs:
       # branch is unreached. The global figure is the ratchet (pyproject.toml);
       # the core's is not negotiable.
       - name: Tests, and the global coverage floor
-        run: uv run pytest --cov --cov-report=term-missing
+        run: uv run pytest --cov
 
       - name: The pure core's coverage floor
         run: uv run coverage report --include='src/my_team/core/*' --fail-under=100
