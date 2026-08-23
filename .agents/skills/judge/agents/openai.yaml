@@ -1,0 +1,5 @@
+interface:
+  display_name: "Judge"
+  short_description: "Rule on a review's points and publish the disposal ledger"
+policy:
+  allow_implicit_invocation: false
