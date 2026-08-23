@@ -58,6 +58,7 @@ def a_role(**overrides: Any) -> RoleFacts:
         "key_inside_repo": False,
         "app_slug": "implementer-my-team",
         "installation_resolved": True,
+        "installation_reaches_repo": True,
         "bot_user_id": 318751706,
     }
     values.update(overrides)
@@ -316,6 +317,23 @@ def test_an_installation_that_does_not_resolve_fails() -> None:
 
     assert finding.status is Status.FAIL
     assert "155006997" in finding.detail
+
+
+def test_an_installation_that_does_not_cover_this_repo_fails() -> None:
+    # It resolves — the App exists and the key signs for it — and the role would still
+    # fail its first write, which is exactly what `doctor` is for.
+    finding = find(with_role("judge", a_role(installation_reaches_repo=False)), "role judge")
+
+    assert finding.status is Status.FAIL
+    assert "does not cover this repo" in finding.detail
+
+
+def test_a_role_is_still_checkable_when_the_repo_could_not_be_named() -> None:
+    # Everything else about a role is provable with its own key alone, so gh being the
+    # thing at fault must not take the key checks down with it.
+    facts = with_role("judge", a_role(installation_reaches_repo=None))
+
+    assert status_of(facts, "role judge") is Status.PASS
 
 
 def test_a_bot_user_id_that_disagrees_with_the_api_fails_naming_both() -> None:

@@ -177,6 +177,7 @@ _ROLE_FACTS = RoleFacts(
     key_inside_repo=False,
     app_slug="implementer-my-team",
     installation_resolved=True,
+    installation_reaches_repo=True,
     bot_user_id=2,
 )
 SOUND = Facts(

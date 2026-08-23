@@ -74,7 +74,8 @@ SLUGS = {
     4608397: ("reviewer-my-team", 317436782),
     4652145: ("judge-my-team", 318752691),
 }
-INSTALLATIONS = (155006997, 154043927, 155007556)
+INSTALLATIONS = {4652114: 155006997, 4608397: 154043927, 4652145: 155007556}
+REPO_INSTALLATION = f"/repos/{REPO}/installation"
 
 
 class Body(io.BytesIO):
@@ -104,9 +105,10 @@ class World:
             **{f"api /users/{slug}%5Bbot%5D --jq .id": f"{bot}\n" for slug, bot in SLUGS.values()},
         }
         self.api: dict[str, Any] = {
-            f"/app/installations/{one}": {"id": one} for one in INSTALLATIONS
+            f"/app/installations/{one}": {"id": one} for one in INSTALLATIONS.values()
         }
         self.app_override: Any = None
+        self.repo_installation_override: Any = None
         self.gh_calls: list[list[str]] = []
         self.api_calls: list[tuple[str, str]] = []
         self._jwt_app: int | None = None
@@ -130,7 +132,12 @@ class World:
         self.api_calls.append((request.get_method(), path))
         # `/app` answers as whichever App signed the JWT, which is how a key that does
         # not belong to its `app_id` would be caught.
-        payload = self._app(request) if path == "/app" else self.api.get(path)
+        if path == "/app":
+            payload = self._app(request)
+        elif path == REPO_INSTALLATION:
+            payload = self._repo_installation(request)
+        else:
+            payload = self.api.get(path)
         if isinstance(payload, Exception):
             raise payload
         if payload is None:
@@ -147,9 +154,18 @@ class World:
         """Answer as the App whose id signed the JWT, read off the token itself."""
         if self.app_override is not None:
             return self.app_override
+        return {"slug": SLUGS[self._issuer(request)][0]}
+
+    def _repo_installation(self, request: Any) -> Any:
+        """Which of this App's installations covers the target repo."""
+        if self.repo_installation_override is not None:
+            return self.repo_installation_override
+        return {"id": INSTALLATIONS[self._issuer(request)]}
+
+    @staticmethod
+    def _issuer(request: Any) -> int:
         claims = request.get_header("Authorization").removeprefix("Bearer ").split(".")[1]
-        issuer = int(json.loads(base64.urlsafe_b64decode(claims + "=" * (-len(claims) % 4)))["iss"])
-        return {"slug": SLUGS[issuer][0]}
+        return int(json.loads(base64.urlsafe_b64decode(claims + "=" * (-len(claims) % 4)))["iss"])
 
 
 @pytest.fixture
@@ -303,6 +319,61 @@ def test_an_installation_that_is_gone_is_reported_as_unresolved(
     assert found.app_slug == "implementer-my-team"
     assert not found.installation_resolved
     assert found.bot_user_id is None
+
+
+def test_an_installation_that_does_not_cover_the_repo_is_noticed(
+    world: World, repo_root: Path
+) -> None:
+    world.repo_installation_override = {"id": 999}
+
+    assert role(probed(repo_root)).installation_reaches_repo is False
+
+
+def test_an_app_that_is_not_installed_on_the_repo_at_all_is_noticed(
+    world: World, repo_root: Path
+) -> None:
+    world.repo_installation_override = urllib.error.HTTPError(
+        f"https://api.github.com{REPO_INSTALLATION}",
+        404,
+        "Not Found",
+        email.message.Message(),
+        io.BytesIO(b"{}"),
+    )
+
+    assert role(probed(repo_root)).installation_reaches_repo is False
+
+
+def test_a_repo_that_could_not_be_named_leaves_that_one_question_unasked(
+    world: World, repo_root: Path
+) -> None:
+    del world.gh["repo view --json nameWithOwner --jq .nameWithOwner"]
+    found = role(probed(repo_root))
+
+    assert found.installation_reaches_repo is None
+    assert found.key_mode == KEY_MODE, "a key is provable without gh, so it is still checked"
+    assert found.app_slug == "implementer-my-team"
+    assert found.bot_user_id == 318751706
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        urllib.error.URLError("connection reset"),
+        urllib.error.HTTPError(
+            f"https://api.github.com{REPO_INSTALLATION}",
+            403,
+            "Forbidden",
+            email.message.Message(),
+            io.BytesIO(b"{}"),
+        ),
+    ],
+)
+def test_github_refusing_the_repo_installation_for_another_reason_is_reported(
+    world: World, repo_root: Path, refusal: Exception
+) -> None:
+    world.repo_installation_override = refusal
+
+    assert isinstance(role(probed(repo_root)), Unavailable)
 
 
 def test_a_bot_user_that_cannot_be_looked_up_is_left_unconfirmed(

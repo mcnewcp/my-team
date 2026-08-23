@@ -65,7 +65,7 @@ def probe(repo_root: Path, *, now: int) -> Facts:
         owner=_owner(config, repository, repo_root),
         repo=repo,
         protection=_protection(repo, repo_root),
-        roles=_roles(config, repo_root, now=now),
+        roles=_roles(config, repository, repo_root, now=now),
     )
 
 
@@ -195,14 +195,23 @@ def _protection_of(branch: str, data: Any) -> Protection | Unavailable:
 
 
 def _roles(
-    config: Config | Unavailable, repo_root: Path, *, now: int
+    config: Config | Unavailable,
+    repository: str | Unavailable,
+    repo_root: Path,
+    *,
+    now: int,
 ) -> Mapping[str, RoleFacts | Unavailable]:
     if isinstance(config, Unavailable):
         return dict.fromkeys(ROLE_NAMES, Unavailable("not checked — the config did not parse"))
-    return {name: _role(getattr(config.roles, name), repo_root, now=now) for name in ROLE_NAMES}
+    named = None if isinstance(repository, Unavailable) else repository
+    return {
+        name: _role(getattr(config.roles, name), named, repo_root, now=now) for name in ROLE_NAMES
+    }
 
 
-def _role(role: RoleConfig, repo_root: Path, *, now: int) -> RoleFacts | Unavailable:
+def _role(
+    role: RoleConfig, repository: str | None, repo_root: Path, *, now: int
+) -> RoleFacts | Unavailable:
     path = key_file(role)
     mode = key_mode(path)
     inside = path.resolve().is_relative_to(repo_root.resolve())
@@ -216,6 +225,7 @@ def _role(role: RoleConfig, repo_root: Path, *, now: int) -> RoleFacts | Unavail
             **{
                 "app_slug": None,
                 "installation_resolved": False,
+                "installation_reaches_repo": None,
                 "bot_user_id": None,
                 **overrides,
             },
@@ -249,7 +259,40 @@ def _role(role: RoleConfig, repo_root: Path, *, now: int) -> RoleFacts | Unavail
     except CredentialError as error:
         return Unavailable(str(error))
 
-    return unproven(app_slug=slug, installation_resolved=True, bot_user_id=_bot_user(slug))
+    reaches = _reaches(jwt, repository, role)
+    if isinstance(reaches, Unavailable):
+        return reaches
+    return unproven(
+        app_slug=slug,
+        installation_resolved=True,
+        installation_reaches_repo=reaches,
+        bot_user_id=_bot_user(slug),
+    )
+
+
+def _reaches(jwt: str, repository: str | None, role: RoleConfig) -> bool | Unavailable | None:
+    """Whether the configured installation is the one covering the target repo.
+
+    An installation that exists but does not cover this repo passes every other check
+    here and then fails the role's first write. Asking the repo which installation it
+    has answers both halves at once — not installed at all is a `404`, and installed
+    under a different id is a mismatch.
+
+    `None` when the repo could not be named: everything else about a role is provable
+    with its own key, and that stays worth reporting when `gh` is the thing at fault.
+    """
+    if repository is None:
+        return None
+    try:
+        return bool(
+            app_get(jwt, f"/repos/{repository}/installation").get("id") == role.installation_id
+        )
+    except AppApiError as error:
+        if error.status == 404:
+            return False
+        return Unavailable(str(error))
+    except CredentialError as error:
+        return Unavailable(str(error))
 
 
 def _bot_user(slug: str) -> int | None:

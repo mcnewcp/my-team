@@ -160,6 +160,10 @@ class RoleFacts:
     is a comparison: the point is not what the API reports, it is whether config agrees
     with it. `key_path` is `declared.key_path` expanded, which is why it is a fact —
     expansion depends on `$HOME`, and the core never reads the environment.
+
+    `installation_reaches_repo` is `None` when the target repo could not be named, which
+    is the one question here that needs `gh`: the rest of a role's identity is provable
+    with its own key alone, and stays checkable when the human's login is not.
     """
 
     declared: RoleConfig
@@ -168,6 +172,7 @@ class RoleFacts:
     key_inside_repo: bool
     app_slug: str | None
     installation_resolved: bool
+    installation_reaches_repo: bool | None
     bot_user_id: int | None
 
 
@@ -304,7 +309,17 @@ def _role(name: str, facts: RoleFacts | Unavailable | None) -> Finding:
             check,
             Status.FAIL,
             f"installation_id {declared.installation_id} does not resolve for "
-            f"{facts.app_slug} — is the App installed on this repo?",
+            f"{facts.app_slug} — is the App installed anywhere?",
+        )
+    if facts.installation_reaches_repo is False:
+        # Resolving proves the installation exists; this proves it is the one covering
+        # the repo the loop is pointed at. Without it a role passes `doctor` and then
+        # fails its first write.
+        return _blocking(
+            check,
+            Status.FAIL,
+            f"installation {declared.installation_id} does not cover this repo — "
+            f"install {facts.app_slug} on it, or config names the wrong installation",
         )
     if facts.bot_user_id is None:
         return _blocking(
