@@ -7,3 +7,14 @@ venv/
 # Tool caches
 .pytest_cache/
 .ruff_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Type checker cache
+.mypy_cache/
+
+# Build artifacts
+dist/
+*.egg-info/
