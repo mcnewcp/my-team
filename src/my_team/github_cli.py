@@ -5,6 +5,14 @@ Two callers, two identities. Most of what the orchestrator reads it reads as the
 does, it does with an installation token passed in that one subprocess's environment
 and nowhere else.
 
+⚠️ **`gh`'s `returncode` is read here, and [ADR
+0010](../../docs/adr/0010-verify-by-observation.md) says "`returncode` is read nowhere
+in this system."** That sentence is about *harnesses*, and the evidence behind it is
+about harnesses: both were measured exiting `0` on work that did not happen. `gh` is not
+a harness — it makes one API call and its exit status reports whether that call
+succeeded, which is the only thing this module asks it. The ADR's claim is worth
+narrowing in writing the next time it is touched.
+
 **`gh auth switch` is never called.** It would do the same job by mutating a config
 file every concurrent tick shares, which races; `GH_TOKEN` documents itself as taking
 precedence over stored credentials, so a per-process variable needs no coordination and

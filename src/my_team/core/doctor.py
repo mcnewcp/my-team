@@ -1,7 +1,7 @@
 """What `doctor` concludes, given what it found — the pure half of the command.
 
 Split the way `observe()` is: `my_team.probe` does every bit of I/O and hands back
-`Facts`, plain data, and `evaluate` turns that into a `Report` without touching the
+`Facts`, plain data, and `evaluate` turns that into a `Diagnosis` without touching the
 world. The split is worth the seam for the same reason it is there: the verdict is the
 whole value of `doctor`, and a verdict is only assertable if it can be produced from a
 snapshot written down in a test.
@@ -69,8 +69,13 @@ class Finding:
 
 
 @dataclass(frozen=True, slots=True)
-class Report:
-    """Every finding, in the order the spec lists the checks."""
+class Diagnosis:
+    """Every finding, in the order the spec lists the checks.
+
+    Not a *Report*: `CONTEXT.md` already spends that word on what a **role** says at the
+    end of an **action**, and two things under one glossary term is exactly the drift
+    the glossary exists to stop.
+    """
 
     findings: tuple[Finding, ...]
 
@@ -192,9 +197,9 @@ class Facts:
 # ── The verdict ──────────────────────────────────────────────────────────────────
 
 
-def evaluate(facts: Facts) -> Report:
+def evaluate(facts: Facts) -> Diagnosis:
     """Turn what was probed into what the human is told."""
-    return Report(tuple(_findings(facts)))
+    return Diagnosis(tuple(_findings(facts)))
 
 
 def _findings(facts: Facts) -> Iterator[Finding]:
@@ -426,24 +431,27 @@ def _protection(protection: Protection | Unprotected | Unavailable) -> Sequence[
 
 
 def _approvals(protection: Protection) -> Finding:
+    """No approving review required and zero required are the same fact to GitHub.
+
+    Either way it stops computing `reviewDecision`, so they share a warning and differ
+    only in how the branch got there.
+    """
     count = protection.required_approving_review_count
-    if count is None:
+    if count:
         return _advisory(
-            "protection approvals",
-            Status.WARN,
-            f"{protection.branch} requires no approving review, so GitHub does not compute "
-            f"reviewDecision — harmless to the ladder, which never reads it, and confusing "
-            f"to a human",
+            "protection approvals", Status.PASS, f"{count} approving review(s) required"
         )
-    if count == 0:
-        return _advisory(
-            "protection approvals",
-            Status.WARN,
-            "required_approving_review_count is 0, which stops GitHub computing "
-            "reviewDecision — harmless to the ladder, which never reads it, and confusing "
-            "to a human",
-        )
-    return _advisory("protection approvals", Status.PASS, f"{count} approving review(s) required")
+    how = (
+        "required_approving_review_count is 0"
+        if count == 0
+        else f"{protection.branch} requires no approving review"
+    )
+    return _advisory(
+        "protection approvals",
+        Status.WARN,
+        f"{how}, so GitHub does not compute reviewDecision — harmless to the ladder, "
+        f"which never reads it, and confusing to a human",
+    )
 
 
 def _enforce_admins(protection: Protection) -> Finding:
@@ -466,21 +474,23 @@ _MARKERS: Final[Mapping[Status, str]] = {
 }
 
 
-def render(report: Report) -> str:
-    """The whole report as plain lines — no cursor tricks, so redirecting it still reads."""
-    width = max(len(f.check) for f in report.findings)
+def render(diagnosis: Diagnosis) -> str:
+    """The whole diagnosis as plain lines — no cursor tricks, so redirecting it reads."""
+    width = max(len(f.check) for f in diagnosis.findings)
     lines = ["my-team doctor", ""]
-    lines += [f"  {_MARKERS[f.status]} {f.check.ljust(width)}  {f.detail}" for f in report.findings]
-    return "\n".join([*lines, "", f"  {_summary(report)}"]) + "\n"
+    lines += [
+        f"  {_MARKERS[f.status]} {f.check.ljust(width)}  {f.detail}" for f in diagnosis.findings
+    ]
+    return "\n".join([*lines, "", f"  {_summary(diagnosis)}"]) + "\n"
 
 
-def _summary(report: Report) -> str:
-    warnings = _count(len(report.warnings), "warning")
-    if report.ok:
-        if not report.warnings:
+def _summary(diagnosis: Diagnosis) -> str:
+    warnings = _count(len(diagnosis.warnings), "warning")
+    if diagnosis.ok:
+        if not diagnosis.warnings:
             return "Everything the loop depends on is in place."
         return f"Nothing blocking. {warnings} to read."
-    return f"{_count(len(report.failures), 'blocking check')} failed, {warnings}."
+    return f"{_count(len(diagnosis.failures), 'blocking check')} failed, {warnings}."
 
 
 def _count(number: int, noun: str) -> str:

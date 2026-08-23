@@ -222,6 +222,20 @@ def test_the_repo_s_merge_policy_and_labels_are_read(world: World, repo_root: Pa
     )
 
 
+def test_a_label_with_spaces_in_it_stays_one_label(world: World, repo_root: Path) -> None:
+    # `gh` prints one name per line, so splitting on whitespace would turn GitHub's own
+    # `good first issue` into three labels that do not exist.
+    world.gh[f"api repos/{REPO}/labels --paginate --jq .[].name"] = (
+        "good first issue\nready-for-agent\nready-for-human\n"
+    )
+
+    assert probed(repo_root).repo.labels == (
+        "good first issue",
+        "ready-for-agent",
+        "ready-for-human",
+    )
+
+
 def test_the_product_owner_is_resolved_against_the_permission_api(
     world: World, repo_root: Path
 ) -> None:
@@ -353,6 +367,21 @@ def test_a_repo_that_could_not_be_named_leaves_that_one_question_unasked(
     assert found.key_mode == KEY_MODE, "a key is provable without gh, so it is still checked"
     assert found.app_slug == "implementer-my-team"
     assert found.bot_user_id == 318751706
+
+
+def test_a_role_that_fails_only_the_repo_check_still_says_what_was_proven(
+    world: World, repo_root: Path
+) -> None:
+    # Covering this repo is the one thing here §1 does not enumerate, so a transient
+    # failure on it must not read as though the key, App and installation went
+    # unexamined too.
+    world.repo_installation_override = urllib.error.URLError("connection reset")
+    found = role(probed(repo_root))
+
+    assert isinstance(found, Unavailable)
+    assert "implementer-my-team resolves" in found.reason
+    assert "155006997 exists" in found.reason
+    assert "could not be checked" in found.reason
 
 
 @pytest.mark.parametrize(

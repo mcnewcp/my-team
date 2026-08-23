@@ -1,8 +1,10 @@
-"""The CLI surface: `--version`, `--help`, and the exit code a usage error takes.
+"""The CLI surface: the entry point, and the commands attached to it.
 
-No subcommand exists yet — each arrives with the ticket that implements it — so what is
-asserted here is the entry point itself: that it is installed, that it reports the
-version the package actually carries, and that it never exits `2`.
+The entry point's own tests come first — that it is installed, that it reports the
+version the package actually carries, and that it never exits `2`, since `2` means
+"escalated" and a mistyped flag must not claim one. Each command arrives with the ticket
+that implements it; `doctor` is the first, and what is asserted about it here is the
+wiring alone. What it *concludes* is `tests/test_doctor.py`'s question.
 """
 
 from __future__ import annotations

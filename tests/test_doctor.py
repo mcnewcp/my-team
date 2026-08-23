@@ -106,14 +106,14 @@ def checks(facts: Facts) -> tuple[str, ...]:
     return tuple(f.check for f in evaluate(facts).findings)
 
 
-# ── The report as a whole ────────────────────────────────────────────────────────
+# ── The diagnosis as a whole ────────────────────────────────────────────────────────
 
 
 def test_a_healthy_repo_passes_every_blocking_check() -> None:
-    report = evaluate(healthy())
+    diagnosis = evaluate(healthy())
 
-    assert report.ok
-    assert not [f for f in report.findings if f.status is Status.FAIL]
+    assert diagnosis.ok
+    assert not [f for f in diagnosis.findings if f.status is Status.FAIL]
 
 
 def test_the_checks_are_reported_in_the_order_the_spec_lists_them() -> None:
@@ -132,17 +132,17 @@ def test_the_checks_are_reported_in_the_order_the_spec_lists_them() -> None:
     )
 
 
-def test_one_failing_blocking_check_sinks_the_report() -> None:
-    report = evaluate(healthy(gh=Unavailable("gh is not on PATH")))
+def test_one_failing_blocking_check_sinks_the_diagnosis() -> None:
+    diagnosis = evaluate(healthy(gh=Unavailable("gh is not on PATH")))
 
-    assert not report.ok
+    assert not diagnosis.ok
 
 
-def test_a_warning_alone_never_sinks_the_report() -> None:
-    report = evaluate(healthy(config=a_config(required_checks=())))
+def test_a_warning_alone_never_sinks_the_diagnosis() -> None:
+    diagnosis = evaluate(healthy(config=a_config(required_checks=())))
 
-    assert report.ok
-    assert [f.check for f in report.findings if f.status is Status.WARN] == ["required checks"]
+    assert diagnosis.ok
+    assert [f.check for f in diagnosis.findings if f.status is Status.WARN] == ["required checks"]
 
 
 def test_no_advisory_check_can_ever_block() -> None:
@@ -359,14 +359,14 @@ def test_a_role_that_could_not_be_probed_fails_with_the_reason() -> None:
 
 
 def test_every_role_in_the_roster_gets_a_line_even_when_none_were_probed() -> None:
-    report = evaluate(healthy(roles={}))
+    diagnosis = evaluate(healthy(roles={}))
 
-    assert [f.check for f in report.findings if f.check.startswith("role ")] == [
+    assert [f.check for f in diagnosis.findings if f.check.startswith("role ")] == [
         "role implementer",
         "role reviewer",
         "role judge",
     ]
-    assert all(f.status is Status.FAIL for f in report.findings if f.check.startswith("role "))
+    assert all(f.status is Status.FAIL for f in diagnosis.findings if f.check.startswith("role "))
 
 
 # ── Merge policy and labels ──────────────────────────────────────────────────────
@@ -516,16 +516,16 @@ def test_protection_that_could_not_be_read_warns_and_still_never_blocks() -> Non
 # ── Rendering ────────────────────────────────────────────────────────────────────
 
 
-def test_every_finding_reaches_the_rendered_report() -> None:
-    report = evaluate(healthy())
-    rendered = render(report)
+def test_every_finding_reaches_the_rendered_diagnosis() -> None:
+    diagnosis = evaluate(healthy())
+    rendered = render(diagnosis)
 
-    for finding in report.findings:
+    for finding in diagnosis.findings:
         assert finding.check in rendered
         assert finding.detail in rendered
 
 
-def test_a_healthy_report_says_so_and_names_no_failure() -> None:
+def test_a_clean_diagnosis_says_so_and_names_no_failure() -> None:
     rendered = render(evaluate(healthy()))
 
     assert "0 failed" not in rendered

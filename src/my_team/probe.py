@@ -112,6 +112,8 @@ def _repo(repository: str | Unavailable, repo_root: Path) -> RepoFacts | Unavail
         return repository
     try:
         data = gh_json(["api", f"repos/{repository}"], cwd=repo_root)
+        # One name per line, so split on lines and not on whitespace: `good first issue`
+        # is one label.
         labels = run_gh(
             ["api", f"repos/{repository}/labels", "--paginate", "--jq", ".[].name"], cwd=repo_root
         )
@@ -125,7 +127,7 @@ def _repo(repository: str | Unavailable, repo_root: Path) -> RepoFacts | Unavail
             allow_merge_commit=bool(data["allow_merge_commit"]),
             allow_rebase_merge=bool(data["allow_rebase_merge"]),
             delete_branch_on_merge=bool(data["delete_branch_on_merge"]),
-            labels=tuple(labels.split()),
+            labels=tuple(labels.splitlines()),
         )
     except (KeyError, TypeError) as error:
         return Unavailable(f"{repository}: GitHub described the repo unrecognisably — {error}")
@@ -216,23 +218,27 @@ def _role(
     mode = key_mode(path)
     inside = path.resolve().is_relative_to(repo_root.resolve())
 
-    def unproven(**overrides: Any) -> RoleFacts:
+    def found(
+        *,
+        app_slug: str | None = None,
+        installation_resolved: bool = False,
+        installation_reaches_repo: bool | None = None,
+        bot_user_id: int | None = None,
+    ) -> RoleFacts:
+        """What is known so far. Each step below adds one field and stops on failure."""
         return RoleFacts(
             declared=role,
             key_path=path,
             key_mode=mode,
             key_inside_repo=inside,
-            **{
-                "app_slug": None,
-                "installation_resolved": False,
-                "installation_reaches_repo": None,
-                "bot_user_id": None,
-                **overrides,
-            },
+            app_slug=app_slug,
+            installation_resolved=installation_resolved,
+            installation_reaches_repo=installation_reaches_repo,
+            bot_user_id=bot_user_id,
         )
 
     if mode is None or inside or mode != KEY_MODE:
-        return unproven()
+        return found()
 
     try:
         jwt = app_jwt_for(role, now=now)
@@ -244,7 +250,7 @@ def _role(
     except AppApiError:
         # The key parsed and GitHub refused it, which is exactly the claim the finding
         # makes: this key is not app_id's key.
-        return unproven()
+        return found()
     except CredentialError as error:
         return Unavailable(str(error))
     if not isinstance(slug, str):
@@ -255,14 +261,20 @@ def _role(
     except AppApiError as error:
         if error.status != 404:
             return Unavailable(str(error))
-        return unproven(app_slug=slug)
+        return found(app_slug=slug)
     except CredentialError as error:
         return Unavailable(str(error))
 
     reaches = _reaches(jwt, repository, role)
     if isinstance(reaches, Unavailable):
-        return reaches
-    return unproven(
+        # Say what was already proven. This check is the one thing here §1 does not
+        # enumerate, and a transient failure on it must not read as though the role's
+        # key, App and installation went unexamined too.
+        return Unavailable(
+            f"{slug} resolves and installation {role.installation_id} exists, but whether "
+            f"it covers this repo could not be checked — {reaches.reason}"
+        )
+    return found(
         app_slug=slug,
         installation_resolved=True,
         installation_reaches_repo=reaches,

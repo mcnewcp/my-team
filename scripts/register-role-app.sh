@@ -273,8 +273,8 @@ if [[ -n "${MT_WIZARD_LIB:-}" ]]; then return 0 2>/dev/null || exit 0; fi
 # This runs before the banner because it decides how many stages there are.
 _clear
 printf '\n%s%s  my-team — register the per-role GitHub Apps%s\n\n' "$BOLD" "$BLUE" "$RESET"
-printf '  %sWhich role?%s %s[all | implementer | reviewer | judge]%s ' \
-  "$BOLD" "$RESET" "$DIM" "$RESET"
+printf '  %sWhich role?%s %s[all | %s]%s ' \
+  "$BOLD" "$RESET" "$DIM" "${ROSTER// / | }" "$RESET"
 read -r ANSWER || true
 ANSWER="${ANSWER:-all}"
 
@@ -284,7 +284,7 @@ elif role_meta "$ANSWER" >/dev/null; then
   ROLES="$ANSWER"
 else
   printf '\n'
-  warn "unknown role '$ANSWER' — the v0.1 roster is implementer, reviewer, judge."
+  warn "unknown role '$ANSWER' — the v0.1 roster is ${ROSTER// /, }."
   printf '\n'
   exit 1
 fi

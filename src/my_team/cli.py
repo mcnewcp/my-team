@@ -30,9 +30,8 @@ class ExitCode(IntEnum):
     already parked, which is why each one prints why. A usage error takes `ERROR`
     rather than argparse's own `2`, which would claim an escalation that never happened.
 
-    The table describes an *issue's* fate, so only two of the five can honestly describe
-    a diagnostic: `doctor` exits `0` when every blocking check passed and `ERROR` when
-    one did not.
+    The table describes an *issue's* fate, so `doctor` borrows only one of the five:
+    `ERROR` when a blocking check failed, and a plain `0` when none did.
     """
 
     MERGED = 0
@@ -75,9 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run_doctor(_: argparse.Namespace) -> int:
     """Probe, evaluate, print. The one clock read in the command lives here."""
-    report = evaluate(probe(Path.cwd(), now=int(time.time())))
-    sys.stdout.write(render(report))
-    return int(ExitCode.MERGED if report.ok else ExitCode.ERROR)
+    diagnosis = evaluate(probe(Path.cwd(), now=int(time.time())))
+    sys.stdout.write(render(diagnosis))
+    # Plain success rather than `MERGED`: the table below describes an *issue's* fate,
+    # and a diagnostic has no issue to report one for.
+    return 0 if diagnosis.ok else int(ExitCode.ERROR)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
