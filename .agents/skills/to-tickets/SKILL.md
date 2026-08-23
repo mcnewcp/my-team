@@ -60,7 +60,15 @@ Iterate until the user approves the breakdown.
 Publish the approved tickets. **How** depends on the configured tracker — the tickets are the same either way, only the shape of the blocking edges changes:
 
 - **Local files** → write one file per ticket under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file.
-- **A real issue tracker (GitHub, Linear, …)** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the platform's native blocking / sub-issue relationship where it has one; otherwise set each ticket's "Blocked by" to the blocking issues. Apply the `ready-for-agent` triage label unless instructed otherwise — the tickets are agent-grabbable by construction.
+- **A real issue tracker (GitHub, Linear, …)** → publish one issue per ticket in dependency order (blockers first), so that by the time a ticket is created every ticket it depends on already has a real identifier to point at. Apply the `ready-for-agent` triage label unless instructed otherwise — the tickets are agent-grabbable by construction.
+
+  **The parent link and the blocking edges are native tracker relationships, not body text.** On GitHub both are flags on the creating command, so a correct ticket takes one call:
+
+  ```
+  gh issue create --parent <parent> --blocked-by <n>,<n> --label ready-for-agent --title "..." --body "..."
+  ```
+
+  `--parent` writes on the child, which is what keeps the parent issue unmodified. Never write the parent or the blockers into the body instead — a body section satisfies no query, drifts the moment an edge moves, and leaves the tracker's own dependency views empty. `docs/agents/issue-tracker.md` carries the full command set, including how to add either edge to an issue that already exists.
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
 
@@ -83,9 +91,9 @@ Do NOT close or modify any parent issue.
 
 <issue-template>
 
-## Parent
+## Source
 
-A reference to the parent issue on the tracker (if the source was an existing issue, otherwise omit this section).
+Which part of the spec, ADR or plan this ticket descends from — section, row or heading, linked. Omit when the work came from the conversation alone. The parent issue itself is NOT named here; that link is native.
 
 ## What to build
 
@@ -95,10 +103,6 @@ The end-to-end behaviour this ticket makes work, from the user's perspective —
 
 - [ ] Criterion 1
 - [ ] Criterion 2
-
-## Blocked by
-
-- A reference to each blocking ticket, or "None — can start immediately".
 
 </issue-template>
 

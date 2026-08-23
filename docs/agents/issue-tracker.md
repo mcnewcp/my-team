@@ -10,6 +10,17 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
+- **Link a sub-issue**: `gh issue create --parent <parent>` at creation, or `gh issue edit <child> --parent <parent>` afterwards; `--remove-parent` unlinks. Both forms write on the **child**, so the parent issue is never modified.
+- **Link a blocking edge**: `gh issue create --blocked-by <n>,<n>` at creation, or `gh issue edit <child> --add-blocked-by <n>,<n>` afterwards (`--add-blocking` for the other direction). GitHub reports `issue_dependencies_summary.blocked_by`, which counts **open** blockers only and is therefore the live gate.
+
+Both relationships are **native, UI-visible links, never body text**. A `## Parent` or
+`## Blocked by` section in an issue body is a bug rather than a fallback: nothing queries it,
+it drifts out of step with the real edges the moment either side moves, and it renders the
+tracker's own dependency views blank. Reserve body prose for what a link cannot carry — which
+part of a spec or ADR this ticket descends from, not which issue it hangs off.
+
+Both flag families take plain issue **numbers or URLs**. Verified on `gh` 2.97; if a flag is
+missing, upgrade `gh` rather than reaching for `gh api` and raw database ids.
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
@@ -38,8 +49,8 @@ Run `gh issue view <number> --comments`.
 Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
 
 - **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
-- **Child ticket**: an issue linked to the map as a GitHub sub-issue (`gh api` on the sub-issues endpoint). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
-- **Blocking**: GitHub's **native issue dependencies** — the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only — the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
-- **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
+- **Child ticket**: an issue linked to the map as a native GitHub sub-issue — see **Link a sub-issue** above. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
+- **Blocking**: GitHub's **native issue dependencies** — see **Link a blocking edge** above. A ticket is unblocked when every blocker is closed.
+- **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`) or an assignee; first in map order wins.
 - **Claim**: `gh issue edit <n> --add-assignee @me` — the session's first write.
 - **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
