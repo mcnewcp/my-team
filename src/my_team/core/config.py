@@ -97,8 +97,10 @@ class Config:
             )
 
 
+ROLE_NAMES: Final = tuple(f.name for f in fields(Roles))
+"""The roster, in the order everything that walks it reports — `doctor` included."""
+
 _TOP_LEVEL_KEYS: Final = frozenset(f.name for f in fields(Config))
-_ROLE_NAMES: Final = tuple(f.name for f in fields(Roles))
 _ROLE_KEYS: Final = frozenset(f.name for f in fields(RoleConfig))
 
 _TYPE_NAMES: Final[Mapping[type, str]] = {
@@ -254,7 +256,7 @@ def parse_config(data: Mapping[str, object]) -> Config:
 
 
 def _parse_roles(table: _Table) -> Roles:
-    table.reject_unknown(_ROLE_NAMES)
+    table.reject_unknown(ROLE_NAMES)
     return Roles(
         implementer=_parse_role(table.table("implementer")),
         reviewer=_parse_role(table.table("reviewer")),
