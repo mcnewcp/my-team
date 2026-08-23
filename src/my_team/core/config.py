@@ -189,9 +189,10 @@ class _Optional(TypedDict, total=False):
 def parse_config(data: Mapping[str, object]) -> Config:
     """Turn a decoded TOML table into a `Config`, or raise `ConfigError`.
 
-    `0` disables the three round limits, so they floor at zero. The rest floor at one:
-    the stall clock is the one limit that cannot be disabled, and a zero-second poll or
-    a zero-token smart zone is a spin rather than a setting.
+    `0` disables the three round limits, so they floor at zero. The other four floor at
+    one: neither clock can be disabled — a zero-minute action budget is not a hang
+    detector — and a zero-second poll or a zero-token smart zone is a spin rather than
+    a setting.
 
     One relationship holds between two keys rather than within one: the stall clock has
     to outlast a single dispatch, or one slow action trips the detector watching it.
