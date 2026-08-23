@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import MISSING, fields
+from dataclasses import MISSING, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +69,18 @@ def minimal(**overrides: Any) -> dict[str, Any]:
     }
     data.update(overrides)
     return data
+
+
+def a_config(**overrides: Any) -> Config:
+    """A `Config` built directly, the way a config source that is not a file would."""
+    role = RoleConfig(app_id=1, bot_user_id=2, installation_id=3, key_path=Path("~/keys/x.pem"))
+    values: dict[str, Any] = {
+        "product_owner": "mcnewcp",
+        "required_checks": ("lint",),
+        "roles": Roles(implementer=role, reviewer=role, judge=role),
+    }
+    values.update(overrides)
+    return Config(**values)
 
 
 def test_the_documented_example_parses_to_the_documented_values() -> None:
@@ -327,14 +339,63 @@ def test_every_optional_key_is_read_from_the_file(key: str) -> None:
     assert getattr(parse_config(minimal(**{key: declared})), key) == declared
 
 
-@pytest.mark.parametrize(("stall", "action"), [(30, 30), (29, 30)])
-def test_the_stall_clock_must_outlast_one_dispatch(stall: int, action: int) -> None:
-    # Otherwise one slow dispatch trips the detector watching it.
-    with pytest.raises(ConfigError, match="max_stall_minutes"):
-        parse_config(minimal(max_stall_minutes=stall, max_action_minutes=action))
+def test_the_stall_clock_must_outlast_one_dispatch() -> None:
+    # Otherwise one slow dispatch trips the detector watching it. The parser owns no
+    # copy of this rule any more, so what is asserted here is that it still routes
+    # through the model's — down to the message a mistyped file already produced.
+    with pytest.raises(ConfigError) as raised:
+        parse_config(minimal(max_stall_minutes=30, max_action_minutes=30))
+
+    assert str(raised.value) == (
+        "max_stall_minutes (30) must exceed max_action_minutes (30), "
+        "or one slow dispatch trips the stall detector"
+    )
 
 
 def test_the_stall_clock_may_be_one_minute_longer_than_a_dispatch() -> None:
     config = parse_config(minimal(max_stall_minutes=31, max_action_minutes=30))
 
     assert config.max_stall_minutes == 31
+
+
+@pytest.mark.parametrize(("stall", "action"), [(30, 30), (29, 30)])
+def test_direct_construction_rejects_a_stall_clock_that_cannot_outlast_a_dispatch(
+    stall: int, action: int
+) -> None:
+    # The rule belongs to the model, not the parser: a config source that never sees a
+    # TOML file must not be able to mint a value the file parser would have rejected.
+    with pytest.raises(ConfigError, match="max_stall_minutes"):
+        a_config(max_stall_minutes=stall, max_action_minutes=action)
+
+
+def test_a_dataclass_copy_cannot_move_one_clock_past_the_other() -> None:
+    config = a_config()
+
+    with pytest.raises(ConfigError, match="max_stall_minutes"):
+        replace(config, max_stall_minutes=config.max_action_minutes)
+
+
+@pytest.mark.parametrize(("stall", "action"), [(31, 30), (90, 30), (2, 1)])
+def test_a_stall_clock_that_outlasts_a_dispatch_is_constructible(stall: int, action: int) -> None:
+    config = a_config(max_stall_minutes=stall, max_action_minutes=action)
+
+    assert (config.max_stall_minutes, config.max_action_minutes) == (stall, action)
+
+
+def test_the_documented_clock_defaults_are_constructible() -> None:
+    # The pair the spec ships has to satisfy the rule the model now enforces.
+    config = a_config()
+
+    assert (config.max_stall_minutes, config.max_action_minutes) == (90, 30)
+
+
+def test_the_clock_failure_names_both_values_and_the_relation() -> None:
+    # A message carrying only one of the two clocks leaves the reader guessing which
+    # of them to move.
+    with pytest.raises(ConfigError) as raised:
+        a_config(max_stall_minutes=20, max_action_minutes=30)
+
+    message = str(raised.value)
+    assert "max_stall_minutes (20)" in message
+    assert "max_action_minutes (30)" in message
+    assert "must exceed" in message
