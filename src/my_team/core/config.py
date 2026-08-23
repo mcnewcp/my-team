@@ -30,6 +30,14 @@ class ConfigError(ValueError):
     """
 
 
+KEY_MODE: Final = 0o600
+"""The mode a role's private key must carry.
+
+Part of the contract around `key_path` rather than of any one command: `doctor` reports
+a key that is not `0600`, and the credential reader refuses to use one. It lives beside
+the field it constrains so those two can never drift apart."""
+
+
 @dataclass(frozen=True, slots=True)
 class RoleConfig:
     """One role's identity: three numeric ids and the key that signs for them.

@@ -29,11 +29,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Final
 
-from my_team.core.config import ROLE_NAMES, Config, RoleConfig
+from my_team.core.config import KEY_MODE, ROLE_NAMES, Config, RoleConfig
 from my_team.core.labels import AUTHORIZATION_LABEL, ESCALATION_LABEL
-
-KEY_MODE: Final = 0o600
-"""The mode a role's private key must carry. Checked, never set."""
 
 WRITE_PERMISSIONS: Final = frozenset({"write", "admin"})
 """What the `permission` API has to report for the product owner's guidance to reach a
