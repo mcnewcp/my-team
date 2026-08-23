@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import base64
 import io
 import json
 import urllib.error
@@ -36,38 +35,8 @@ ROLE = RoleConfig(
     key_path=Path("~/.config/my-team/keys/implementer.pem"),
 )
 
-# An RSA private key *structure*: parseable, big enough to pad, and not a real pair.
-# What a signature is worth is `tests/test_app_jwt.py`'s question, and it asks openssl.
-# These tests only need the bytes on disk to reach the signer, so the key is built here
-# rather than committed — a real PEM in a repo is secret-scanner bait for no gain.
 
-
-def der(tag: int, value: bytes) -> bytes:
-    return bytes([tag, len(value)]) + value if len(value) < 0x80 else _long(tag, value)
-
-
-def _long(tag: int, value: bytes) -> bytes:
-    length = len(value).to_bytes((len(value).bit_length() + 7) // 8, "big")
-    return bytes([tag, 0x80 | len(length)]) + length + value
-
-
-def der_integer(value: int) -> bytes:
-    return der(0x02, value.to_bytes(max(1, (value.bit_length() + 8) // 8), "big"))
-
-
-def a_pem(modulus: int = 2**1023 + 5, private_exponent: int = 65537) -> str:
-    body = der(
-        0x30,
-        der_integer(0) + der_integer(modulus) + der_integer(65537) + der_integer(private_exponent),
-    )
-    encoded = base64.encodebytes(body).decode()
-    return f"-----BEGIN RSA PRIVATE KEY-----\n{encoded}-----END RSA PRIVATE KEY-----\n"
-
-
-TINY_KEY = a_pem()
-
-
-def a_key(tmp_path: Path, *, mode: int = KEY_MODE, body: str = TINY_KEY) -> Path:
+def a_key(tmp_path: Path, body: str, *, mode: int = KEY_MODE) -> Path:
     path = tmp_path / "implementer.pem"
     path.write_text(body)
     path.chmod(mode)
@@ -118,12 +87,12 @@ def test_a_missing_key_has_no_mode(tmp_path: Path) -> None:
     assert key_mode(tmp_path / "absent.pem") is None
 
 
-def test_a_present_key_reports_its_permission_bits(tmp_path: Path) -> None:
-    assert key_mode(a_key(tmp_path, mode=0o644)) == 0o644
+def test_a_present_key_reports_its_permission_bits(tmp_path: Path, rsa_pem: str) -> None:
+    assert key_mode(a_key(tmp_path, rsa_pem, mode=0o644)) == 0o644
 
 
-def test_a_key_at_0600_is_read(tmp_path: Path) -> None:
-    assert read_private_key(a_key(tmp_path)) == TINY_KEY
+def test_a_key_at_0600_is_read(tmp_path: Path, rsa_pem: str) -> None:
+    assert read_private_key(a_key(tmp_path, rsa_pem)) == rsa_pem
 
 
 def test_a_missing_key_is_refused_by_path(tmp_path: Path) -> None:
@@ -133,23 +102,23 @@ def test_a_missing_key_is_refused_by_path(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("mode", [0o644, 0o400, 0o660, 0o777])
 def test_a_key_that_is_not_0600_is_refused_rather_than_merely_reported(
-    tmp_path: Path, mode: int
+    tmp_path: Path, rsa_pem: str, mode: int
 ) -> None:
     # `doctor` reports the mode; this is the refusal, so a run that skipped `doctor`
     # cannot quietly use a world-readable key.
     with pytest.raises(CredentialError, match=f"{mode:04o}"):
-        read_private_key(a_key(tmp_path, mode=mode))
+        read_private_key(a_key(tmp_path, rsa_pem, mode=mode))
 
 
-def test_the_jwt_is_signed_with_the_key_on_disk(tmp_path: Path) -> None:
-    token = app_jwt_for(role_with_key(a_key(tmp_path)), now=1_755_000_000)
+def test_the_jwt_is_signed_with_the_key_on_disk(tmp_path: Path, rsa_pem: str) -> None:
+    token = app_jwt_for(role_with_key(a_key(tmp_path, rsa_pem)), now=1_755_000_000)
 
     assert len(token.split(".")) == 3
 
 
-def test_a_role_whose_key_is_unusable_cannot_mint_a_jwt(tmp_path: Path) -> None:
+def test_a_role_whose_key_is_unusable_cannot_mint_a_jwt(tmp_path: Path, rsa_pem: str) -> None:
     with pytest.raises(CredentialError):
-        app_jwt_for(role_with_key(a_key(tmp_path, mode=0o644)), now=1)
+        app_jwt_for(role_with_key(a_key(tmp_path, rsa_pem, mode=0o644)), now=1)
 
 
 # ── Speaking to GitHub as the App ────────────────────────────────────────────────
@@ -204,12 +173,12 @@ def test_an_unreachable_github_is_an_error_about_the_run_not_about_the_config(
 
 
 def test_minting_a_token_posts_to_the_role_s_own_installation(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rsa_pem: str
 ) -> None:
     api = Api({"token": "ghs_abc", "expires_at": "2026-08-23T13:00:00Z"})
     monkeypatch.setattr(urllib.request, "urlopen", api)
 
-    minted = installation_token(role_with_key(a_key(tmp_path)), now=1_755_000_000)
+    minted = installation_token(role_with_key(a_key(tmp_path, rsa_pem)), now=1_755_000_000)
 
     assert api.requests[0].full_url == (
         "https://api.github.com/app/installations/155006997/access_tokens"

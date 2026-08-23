@@ -183,7 +183,7 @@ def test_gh_present_but_unauthenticated_fails() -> None:
     finding = find(healthy(gh=GhFacts(path="/usr/bin/gh", account=None)), "gh")
 
     assert finding.status is Status.FAIL
-    assert "gh auth login" in finding.detail
+    assert "gh auth status" in finding.detail
 
 
 def test_gh_authenticated_names_the_account() -> None:

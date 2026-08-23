@@ -218,8 +218,12 @@ def _gh(facts: GhFacts | Unavailable) -> Finding:
     if isinstance(facts, Unavailable):
         return _blocking("gh", Status.FAIL, facts.reason)
     if facts.account is None:
+        # Not logged in and unreachable look identical from here, and `gh auth status`
+        # is the command that tells them apart — so it is the one named.
         return _blocking(
-            "gh", Status.FAIL, f"{facts.path} is not authenticated — run `gh auth login`"
+            "gh",
+            Status.FAIL,
+            f"{facts.path} reported no account — run `gh auth status` to see why",
         )
     return _blocking("gh", Status.PASS, f"{facts.path}, authenticated as {facts.account}")
 
