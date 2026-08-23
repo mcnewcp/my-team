@@ -18,3 +18,7 @@ htmlcov/
 # Build artifacts
 dist/
 *.egg-info/
+
+# macOS. Hatchling drops this from a build unconditionally, so the packaging test's
+# two sides only agree on what counts as source if git drops it too.
+.DS_Store
