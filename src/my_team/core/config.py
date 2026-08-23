@@ -9,8 +9,10 @@ Two naming rules the spec fixes, and a test guards:
 
 - every limit is `max_*`. `cap` is spoken for twice already — as an `_Avoid_` term for
   the **smart zone**, and as the harness seam's own parameter — so config never uses it.
-- roles key on numeric ids. Nothing keys on an App slug, which is why `RoleConfig` has
-  no name field: the table key is the role, and the App's own name is not config.
+- roles never key on an App slug — §1 fixes the table key as the role name. That rule is
+  about the key and not the fields: `RoleConfig` carries no name field for the narrower
+  reason that §1's listing of role keys stops at these four. §7's briefing does want a
+  per-role login beside the ids, and where that comes from is settled in #55, not here.
 """
 
 from __future__ import annotations
