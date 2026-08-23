@@ -78,6 +78,21 @@ class Config:
     max_action_minutes: int = 30
     poll_interval: int = 15
 
+    def __post_init__(self) -> None:
+        """Enforce the one rule that holds between two keys rather than within one.
+
+        The stall clock has to outlast a single dispatch, or one slow action trips the
+        detector watching it. It is enforced here rather than in `parse_config` so that
+        no construction path can escape it — not a config source that never sees a TOML
+        file, and not a `dataclasses.replace` that moves one clock past the other.
+        """
+        if self.max_stall_minutes <= self.max_action_minutes:
+            raise ConfigError(
+                f"max_stall_minutes ({self.max_stall_minutes}) must exceed "
+                f"max_action_minutes ({self.max_action_minutes}), or one slow dispatch "
+                f"trips the stall detector"
+            )
+
 
 _TOP_LEVEL_KEYS: Final = frozenset(f.name for f in fields(Config))
 _ROLE_NAMES: Final = tuple(f.name for f in fields(Roles))
@@ -196,8 +211,8 @@ def parse_config(data: Mapping[str, object]) -> Config:
     detector — and a zero-second poll or a zero-token smart zone is a spin rather than
     a setting.
 
-    One relationship holds between two keys rather than within one: the stall clock has
-    to outlast a single dispatch, or one slow action trips the detector watching it.
+    Every rule that reads more than one key at once belongs to `Config` itself, so this
+    function only ever checks a key against its own type and floor.
     """
     table = _Table(data, "")
     table.reject_unknown(_TOP_LEVEL_KEYS)
@@ -224,18 +239,12 @@ def parse_config(data: Mapping[str, object]) -> Config:
     if table.has("poll_interval"):
         optional["poll_interval"] = table.integer("poll_interval", minimum=1)
 
-    config = Config(
+    return Config(
         product_owner=table.string("product_owner"),
         required_checks=table.strings("required_checks"),
         roles=_parse_roles(table.table("roles")),
         **optional,
     )
-    if config.max_stall_minutes <= config.max_action_minutes:
-        raise ConfigError(
-            f"max_stall_minutes ({config.max_stall_minutes}) must exceed max_action_minutes "
-            f"({config.max_action_minutes}), or one slow dispatch trips the stall detector"
-        )
-    return config
 
 
 def _parse_roles(table: _Table) -> Roles:
