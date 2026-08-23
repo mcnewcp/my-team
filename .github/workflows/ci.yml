@@ -3,7 +3,7 @@ name: CI
 # The three job ids below are this repo's own `required_checks` when the team is
 # pointed at its own source — the gate is declared in config, never inferred — so
 # renaming a job here renames a config value there.
-# Standard: docs/spec/v0.1.md § "CI gates for the orchestrator repo"
+# Standard: AGENTS.md § Development
 
 on:
   pull_request:
