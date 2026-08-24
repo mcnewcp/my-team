@@ -29,7 +29,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Final
 
-from my_team.core.config import KEY_MODE, ROLE_NAMES, ROLE_PERMISSIONS, Config, RoleConfig
+from my_team.core.config import (
+    KEY_MODE,
+    ROLE_NAMES,
+    ROLE_PERMISSIONS,
+    UNAVOIDABLE_PERMISSION,
+    Config,
+    RoleConfig,
+)
 from my_team.core.labels import AUTHORIZATION_LABEL, ESCALATION_LABEL
 
 WRITE_PERMISSIONS: Final = frozenset({"write", "admin"})
@@ -430,7 +437,14 @@ def _identity(check: str, name: str, facts: RoleFacts) -> Sequence[Finding]:
 
 
 def _wrong_permissions(name: str, granted: Mapping[str, str] | Unavailable) -> str:
-    """Which of the role's three fixed permissions the installation does not carry.
+    """Every way the installation's authority differs from the role's row of the matrix.
+
+    Both directions, because the row is exhaustive rather than a floor: a permission it
+    names and the installation does not carry at that level, and a permission it does
+    not name at all — which is authority the design never gave the role and which no
+    other check would notice, since the rules leaned on here are permissions the App was
+    asked not to be given. `UNAVOIDABLE_PERMISSION` is subtracted first: GitHub grants it
+    to every App by itself, so holding it is not a provisioning choice.
 
     Nothing at all when what it grants could not be read: this check blocks a run, and a
     grant nobody could read is not a grant that is wrong.
@@ -439,9 +453,28 @@ def _wrong_permissions(name: str, granted: Mapping[str, str] | Unavailable) -> s
         return ""
     return "; ".join(
         f"{permission} {granted.get(permission, 'no access')} rather than {level}"
-        for permission, level in ROLE_PERMISSIONS[name].items()
+        for permission, level in _fixed_authority(name, granted).items()
         if granted.get(permission) != level
     )
+
+
+def _fixed_authority(name: str, granted: Mapping[str, str]) -> Mapping[str, str]:
+    """The role's row, extended with a `no access` line for each grant it does not name.
+
+    Stating the prohibition as an expected level rather than as a second kind of problem
+    is what keeps one sentence describing both: an installation carrying `workflows` has
+    it "rather than no access", exactly as one missing `issues` has "no access rather
+    than read".
+    """
+    fixed = ROLE_PERMISSIONS[name]
+    return {
+        **fixed,
+        **{
+            permission: "no access"
+            for permission, level in granted.items()
+            if permission not in fixed and (permission, level) != UNAVOIDABLE_PERMISSION
+        },
+    }
 
 
 def _distinct_identities(config: Config) -> Finding:

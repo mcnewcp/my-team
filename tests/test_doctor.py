@@ -491,6 +491,22 @@ def test_an_installation_missing_a_permission_outright_says_no_access() -> None:
     assert "issues no access" in finding.detail
 
 
+def test_an_installation_carrying_authority_the_row_does_not_name_fails() -> None:
+    """The row is exhaustive, not a floor — a role holds it and nothing else.
+
+    Every prohibition the design leans on is a permission the App was asked not to be
+    given, so a grant outside the row is authority no other check would ever notice.
+    """
+    permissions = {**ROLE_PERMISSIONS["reviewer"], "workflows": "write"}
+    finding = find(
+        broken("reviewer", installation=an_installation("reviewer", permissions=permissions)),
+        "role reviewer",
+    )
+
+    assert finding.status is Status.FAIL
+    assert "workflows write rather than no access" in finding.detail
+
+
 def test_a_grant_that_could_not_be_read_warns_on_its_own_line_and_never_blocks() -> None:
     """What an installation grants is a check §1 does not enumerate.
 
@@ -514,9 +530,9 @@ def test_a_grant_that_was_read_adds_no_line_of_its_own() -> None:
     assert "role judge authority" not in checks(healthy())
 
 
-def test_a_permission_the_matrix_does_not_name_is_not_judged() -> None:
-    # GitHub grants every App `metadata` by itself, so a matrix read as an exhaustive
-    # list would fail every correctly provisioned role.
+def test_the_one_grant_nobody_asked_for_is_not_authority_the_role_holds() -> None:
+    # `metadata` read is on every App whether or not the form asked, so it is the one
+    # subtraction the exhaustive reading needs — without it every provisioned role fails.
     permissions = {**ROLE_PERMISSIONS["reviewer"], "metadata": "read"}
 
     assert (

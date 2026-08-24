@@ -236,18 +236,41 @@ permission_label() {
 # _dots NAME — the leader that lines the three permission lines up.
 _dots() { printf '%*s' "$((20 - ${#1}))" '' | tr ' ' '.'; }
 
-# permission_problems ROLE GRANTED — which of the role's fixed permissions the
-# installation does not carry, one per line; nothing at all when the matrix matches.
+# UNAVOIDABLE_PERMISSION — the one grant outside the matrix that means nothing. GitHub
+# gives every App `metadata` read whether or not the form asked for it, and there is no
+# way to decline it; every other permission outside a role's row is one a human clicked.
+# The Python side keeps the same pair, and a test holds the two spellings together.
+UNAVOIDABLE_PERMISSION="metadata=read"
+
+# permission_problems ROLE GRANTED — every way the installation's authority differs from
+# the role's row, one per line; nothing at all when the matrix matches.
+#
+# Both directions, because the row is exhaustive rather than a floor: a permission it
+# names and the installation does not carry at that level, and a permission it does not
+# name at all, which is authority nobody asked this role to have. The prohibition is
+# reported as an expected level rather than as a second kind of problem, so one sentence
+# covers both — `workflows is write rather than no access` reads like the missing case.
+#
 # GRANTED is `<permission>=<level>` lines, the shape installation_permissions reads out
 # of the API — so this stays plain shell and is checked by a test.
 permission_problems() {
-  local role="$1" granted="$2" permission level held
+  local role="$1" granted="$2" permission level held fixed
+  # The row first: both directions are read off it. A name with no row is a caller bug
+  # rather than an installation problem — every caller passes one out of $ROSTER — and
+  # answering "nothing wrong" for it is what this did before the exhaustive pass existed.
+  fixed=$(role_permissions "$role") || return 0
   while IFS='=' read -r permission level; do
     [[ -n "$permission" ]] || continue
     held=$(printf '%s\n' "$granted" | sed -n "s/^${permission}=//p" | tail -n1)
     [[ "$held" == "$level" ]] \
       || printf '%s is %s rather than %s\n' "$permission" "${held:-no access}" "$level"
-  done < <(role_permissions "$role")
+  done <<<"$fixed"
+  while IFS='=' read -r permission level; do
+    [[ -n "$permission" ]] || continue
+    if [[ "$permission=$level" == "$UNAVOIDABLE_PERMISSION" ]]; then continue; fi
+    printf '%s\n' "$fixed" | grep -q "^${permission}=" \
+      || printf '%s is %s rather than no access\n' "$permission" "$level"
+  done <<<"$granted"
 }
 
 # installation_permissions JSON — what one installation grants, as the lines above.
@@ -622,7 +645,7 @@ verify_role() {
   granted=$(installation_permissions "$installation")
   wrong=$(permission_problems "$role" "$granted")
   if [[ -n "$wrong" ]]; then
-    warn "the installation does not carry the authority the $role role is fixed to:"
+    warn "the installation's authority is not the one the $role role is fixed to:"
     while read -r _line; do [[ -n "$_line" ]] && note "  - $_line"; done <<<"$wrong"
     SKIPPED+=("$role: fix its permissions on the App, then re-accept the installation")
     proven=0

@@ -21,7 +21,13 @@ from pathlib import Path
 
 import pytest
 
-from my_team.core.config import KEY_MODE, ROLE_NAMES, ROLE_PERMISSIONS, parse_config
+from my_team.core.config import (
+    KEY_MODE,
+    ROLE_NAMES,
+    ROLE_PERMISSIONS,
+    UNAVOIDABLE_PERMISSION,
+    parse_config,
+)
 from my_team.credentials import key_mode, repo_containing
 
 WIZARD = Path(__file__).resolve().parents[1] / "scripts" / "register-role-app.sh"
@@ -240,12 +246,34 @@ def test_an_installation_that_matches_the_matrix_has_no_problems(tmp_path: Path)
     assert wizard(tmp_path, f"permission_problems reviewer '{granted_lines}'") == ""
 
 
-def test_a_permission_the_matrix_does_not_name_is_not_judged(tmp_path: Path) -> None:
-    # GitHub grants every App `metadata` by itself, so a matrix read as an exhaustive
-    # list would reject every correctly provisioned role.
-    granted_lines = "contents=read\npull_requests=write\nissues=read\nmetadata=read"
+@pytest.mark.parametrize("role", ROLE_NAMES)
+def test_the_wizard_and_the_loop_agree_about_the_one_grant_nobody_asked_for(
+    tmp_path: Path, role: str
+) -> None:
+    # `metadata` read is on every App whether or not the form asked, so it is the one
+    # subtraction the exhaustive reading needs — without it every provisioned role is
+    # rejected. Two copies again, one in bash and one in Python, and the drift would be
+    # a wizard that refuses exactly the rosters it just provisioned correctly.
+    permission, level = UNAVOIDABLE_PERMISSION
+    granted_lines = "\n".join(
+        f"{name}={granted}"
+        for name, granted in {**ROLE_PERMISSIONS[role], permission: level}.items()
+    )
 
-    assert wizard(tmp_path, f"permission_problems reviewer '{granted_lines}'") == ""
+    assert wizard(tmp_path, f"permission_problems {role} '{granted_lines}'") == ""
+
+
+def test_an_installation_carrying_authority_the_matrix_does_not_name_is_a_problem(
+    tmp_path: Path,
+) -> None:
+    # The row is everything the role may hold, so a permission it does not name is one
+    # expected at no access — the wizard says so on the form and must say so on the
+    # verdict, or it certifies a role wider than the one it told a human to provision.
+    granted_lines = "contents=read\npull_requests=write\nissues=read\nworkflows=write"
+
+    assert "workflows is write rather than no access" in wizard(
+        tmp_path, f"permission_problems reviewer '{granted_lines}'"
+    )
 
 
 @pytest.mark.parametrize(

@@ -123,8 +123,21 @@ Matched exactly rather than as a floor, because the matrix is two prohibitions a
 as it is a grant: the reviewer's Contents *read* is the write-side expression of "the
 reviewer never pushes", and the implementer's Issues *read* of "the implementer never
 files issues". A role wider than its row is one the platform would let past the rule the
-design leans on. The three named here are the three §5 fixes; `metadata`, which GitHub
-grants every App by itself, is not one of them."""
+design leans on.
+
+Exhaustive in the other direction too: a row is everything its role may hold, so a
+permission it does not name is one expected at no access. The three named here are the
+three §5 fixes, and `UNAVOIDABLE_PERMISSION` is the only grant outside them that means
+nothing."""
+
+UNAVOIDABLE_PERMISSION: Final = ("metadata", "read")
+"""The one grant no provisioning choice explains, so the one the matrix does not judge.
+
+GitHub gives every App `metadata` read whether or not the form asked for it, and there
+is no way to decline it. Every *other* permission outside a role's row is one a human
+selected, which is why the exception is this pair rather than this name: the matrix is
+read as exhaustive, and this is what has to be subtracted first for that reading to
+hold."""
 
 _TOP_LEVEL_KEYS: Final = frozenset(f.name for f in fields(Config))
 _ROLE_KEYS: Final = frozenset(f.name for f in fields(RoleConfig))
