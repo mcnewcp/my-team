@@ -208,7 +208,7 @@ def _protection(
     branch = repo.default_branch
     # One path segment, percent-encoded. A branch may legally be called `release#1`, and
     # interpolated raw the `#` starts a URL fragment — so the request asks about
-    # `release`, GitHub answers about a different branch, and the report is confidently
+    # `release`, GitHub answers about a different branch, and the diagnosis is confidently
     # wrong. Encoding the `/` in `release/1.0` too is measured rather than assumed:
     # `gh api repos/cli/cli/branches/af%2F12325-pr-view-project-null` and the same path
     # with a raw `/` return the same branch, so one segment is safe for both shapes.

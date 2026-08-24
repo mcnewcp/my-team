@@ -9,7 +9,7 @@ through its environment and is never written down.
 Keys live at `~/.config/my-team/keys/<role>.pem`, mode `0600`, **outside every repo**:
 never a path inside the target repo, so there is nothing to `.gitignore` and nothing
 for a dispatched agent to stage by accident. `read_private_key` refuses any other mode
-rather than merely reporting it — `doctor` is the report, and this is the refusal.
+rather than merely reporting it — `doctor` is the diagnosis, and this is the refusal.
 
 ⚠️ A risk accepted knowingly and recorded rather than papered over: a dispatched agent
 runs as the same OS user, so it *can* read these keys. The Apps sit on repos the owner

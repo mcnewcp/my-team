@@ -125,7 +125,7 @@ def test_doctor_is_listed_among_the_commands(capsys: pytest.CaptureFixture[str])
     assert "doctor" in capsys.readouterr().out
 
 
-def test_doctor_prints_the_report(
+def test_doctor_prints_the_diagnosis(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("my_team.cli.probe", Healthy())
