@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from my_team.core.config import KEY_MODE, ROLE_NAMES, ROLE_PERMISSIONS, parse_config
-from my_team.credentials import key_mode
+from my_team.credentials import key_mode, repo_containing
 
 WIZARD = Path(__file__).resolve().parents[1] / "scripts" / "register-role-app.sh"
 
@@ -172,6 +172,40 @@ def test_a_directory_at_0600_is_not_a_role_key(tmp_path: Path) -> None:
 
 def test_a_path_with_nothing_at_it_is_not_a_role_key(tmp_path: Path) -> None:
     assert not succeeds(tmp_path, f"key_is_a_role_key {tmp_path}/absent.pem")
+
+
+def a_repo(root: Path, marker: str = "") -> Path:
+    """A work tree at `root`, marked the way git marks one."""
+    root.mkdir(parents=True, exist_ok=True)
+    if marker:
+        (root / ".git").write_text(marker)
+    else:
+        (root / ".git").mkdir()
+    return root
+
+
+def a_key_in(root: Path, key_pem: str) -> Path:
+    key = root / "judge.pem"
+    key.write_text(key_pem)
+    key.chmod(KEY_MODE)
+    return key
+
+
+@pytest.mark.parametrize("marker", ["", "gitdir: /elsewhere/.git/worktrees/w\n"])
+def test_the_wizard_and_the_loop_agree_that_a_key_inside_a_repo_is_not_a_role_key(
+    tmp_path: Path, real_key: str, marker: str
+) -> None:
+    """§5 puts keys outside *every* repo, and `read_private_key` refuses one that is not.
+
+    A key at 0600 inside a work tree is still one `git add .` from being published, and
+    a wizard that certified it would hand over a block the loop then refuses to use. The
+    marker is a directory in a clone and a *file* in a linked worktree or a submodule,
+    so what counts is that something is there rather than what kind of thing.
+    """
+    key = a_key_in(a_repo(tmp_path / "clone", marker), real_key)
+
+    assert repo_containing(key) is not None, "the loop refuses this key"
+    assert not succeeds(tmp_path, f"key_is_a_role_key {key}"), "so the wizard must too"
 
 
 # ── The authority a role is fixed to ─────────────────────────────────────────────
@@ -372,6 +406,24 @@ def test_a_role_whose_key_slipped_off_0600_is_not_offered_as_complete(
     assert "600" in emitted
 
 
+def test_a_role_whose_key_sits_inside_a_repo_is_not_offered_and_names_the_repo(
+    tmp_path: Path, real_key: str
+) -> None:
+    """The key is mode 600 and openssl reads it — what is wrong is *where* it is.
+
+    So the comment has to name the enclosing repository rather than report a mode that
+    is already correct, which would send the human to `chmod` a key that needs moving.
+    """
+    provisioned(tmp_path, real_key, "judge")
+    checkout = a_repo(tmp_path / "clone")
+    a_key_in(checkout, real_key)
+    emitted = wizard(tmp_path, f"KEY_DIR={checkout}\nconfig_block judge || true")
+
+    assert only_a_comment(emitted, "judge")
+    assert f"inside the repository at {checkout}" in emitted, "the unsafe repository is named"
+    assert "600" not in emitted, "and not reported as a mode this key already carries"
+
+
 def test_a_role_whose_key_is_not_on_disk_is_not_offered_as_complete(
     tmp_path: Path, real_key: str
 ) -> None:
@@ -421,6 +473,32 @@ def test_a_verify_run_that_returns_early_leaves_no_verdict_standing(
     assert "VERIFIED" not in recorded.read_text(), "the earlier verdict is gone"
     assert "APP_ID=4652145" in recorded.read_text(), "and the ids it left are untouched"
     assert only_a_comment(wizard(tmp_path, "config_block judge || true"), "judge")
+
+
+def test_a_verify_run_will_not_certify_a_key_that_sits_inside_a_repo(
+    tmp_path: Path, real_key: str
+) -> None:
+    """Verification is what a config block is gated on, so this is where it has to stop.
+
+    The key signs perfectly well — refusing it is about where it sits, and a stage that
+    signed with it first would certify an identity whose key §5 forbids. `mint_jwt` is
+    stubbed to say so out loud; `app_api` to keep the stage off the network.
+    """
+    provisioned(tmp_path, real_key, "judge")
+    checkout = a_repo(tmp_path / "clone")
+    key = a_key_in(checkout, real_key)
+    recorded = tmp_path / ".config" / "my-team" / "judge.env"
+
+    emitted = wizard(
+        tmp_path,
+        "mint_jwt() { echo REACHED-SIGNING; }\napp_api() { :; }\n"
+        f"ENV_FILE={recorded}\nPEM_PATH={key}\nverify_role judge",
+    )
+
+    assert f"inside the repository at {checkout}" in emitted, "the unsafe repository is named"
+    assert "REACHED-SIGNING" not in emitted, "and it was refused before being signed with"
+    assert "VERIFIED" not in recorded.read_text(), "so no verdict stands"
+    assert "APP_ID=4652145" in recorded.read_text(), "and the ids it left are untouched"
 
 
 def test_the_key_the_wizard_stores_is_one_the_loop_will_read(tmp_path: Path, real_key: str) -> None:

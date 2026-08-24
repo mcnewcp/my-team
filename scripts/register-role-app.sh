@@ -310,6 +310,37 @@ clear_env() {
   mv "$tmp" "$ENV_FILE"
 }
 
+# repo_containing PATH — the work tree PATH sits inside, printed; nothing, and a
+# non-zero status, when it sits inside none.
+#
+# Discovery is git's own: the nearest ancestor holding a `.git`, which is a directory in
+# a clone and a *file* in a linked worktree or a submodule — so the test is that
+# something is there, not what kind of thing. Asked of ancestry rather than of the repo
+# being provisioned, because a key under some *other* clone is exactly as stageable as
+# one under this one, and what §5 fixes is outside **every** repo.
+#
+# `credentials.repo_containing` asks the same question of the same path; this is the
+# half that runs before the key is ever handed over.
+repo_containing() {
+  local path="$1" dir target hops=0
+  # Symlinks first: the file `git add .` would stage is the one at the end of the link.
+  while [[ -L "$path" ]] && (( hops < 40 )); do
+    target=$(readlink "$path") || return 1
+    [[ "$target" == /* ]] || target="$(dirname "$path")/$target"
+    path="$target"
+    hops=$((hops + 1))
+  done
+  # Physical, so a symlinked parent is judged where it actually lands. A directory that
+  # will not let itself be looked into answers "no repo" rather than failing the run.
+  dir=$(cd -P "$(dirname "$path")" 2>/dev/null && pwd -P) || return 1
+  while [[ -n "$dir" && "$dir" != "/" ]]; do
+    if [[ -e "$dir/.git" ]]; then printf '%s' "$dir"; return 0; fi
+    dir=$(dirname "$dir")
+  done
+  if [[ -e "/.git" ]]; then printf '%s' "/"; return 0; fi
+  return 1
+}
+
 # key_is_a_role_key PATH — a regular file, at mode 600, that openssl reads as an RSA
 # private key. All three, because `my-team doctor` blocks on all three and
 # `credentials.read_private_key` refuses to read past them.
@@ -322,6 +353,11 @@ clear_env() {
 key_is_a_role_key() {
   local path="$1" mode
   [[ -f "$path" ]] || return 1
+  # Refused ahead of the mode because no mode is the fix for it: a key inside a work
+  # tree is one `git add .` from being published whatever its bits say. `read_private_key`
+  # refuses it in the same order, so certifying it here would promise a key the loop
+  # will not read.
+  ! repo_containing "$path" >/dev/null || return 1
   # `stat` spells this differently on GNU and on BSD, and each writes nothing to stdout
   # when it rejects the other's flag — so trying both in order is safe.
   mode=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%OLp' "$path" 2>/dev/null) || return 1
@@ -345,7 +381,7 @@ key_is_a_role_key() {
 # id is worse here than no block.
 config_block() {
   local role="$1" env_file="$CONFIG_DIR/$1.env" key="$KEY_DIR/$1.pem"
-  local app_id bot_user_id installation_id missing=""
+  local app_id bot_user_id installation_id enclosing missing=""
   app_id=$(_value_in "$env_file" APP_ID || true)
   bot_user_id=$(_value_in "$env_file" BOT_USER_ID || true)
   installation_id=$(_value_in "$env_file" INSTALLATION_ID || true)
@@ -355,7 +391,14 @@ config_block() {
   [[ -n "$installation_id" ]] || missing="$missing installation_id,"
   [[ "$(_value_in "$env_file" VERIFIED || true)" == "$role" ]] \
                               || missing="$missing a verification that finished,"
-  key_is_a_role_key "$key"    || missing="$missing a mode-600 key at $key,"
+  # Where the key is, before what it is: a key at the right mode inside a work tree is
+  # correct in every way but the one that matters, and reporting the mode would send the
+  # human to `chmod` a key that needs moving.
+  if enclosing=$(repo_containing "$key"); then
+    missing="$missing a key outside every repo — $key is inside the repository at $enclosing,"
+  else
+    key_is_a_role_key "$key"  || missing="$missing a mode-600 key at $key,"
+  fi
 
   if [[ -n "$missing" ]]; then
     printf '# [roles.%s] — not ready: missing%s.\n' "$role" "${missing%,}"
@@ -483,7 +526,7 @@ install_app() {
 # ── Stage 4 — verify, and read back the ids config will key on ────────────
 verify_role() {
   local role="$1" jwt app_json live_slug live_name token repos missing extra proven=1
-  local installation granted wrong _line
+  local installation granted wrong enclosing _line
   stage "$role · verify and record the identity"
   say "Proves the key is a role key and signs, that the app is installed, that it holds"
   say "the authority the role is fixed to and that its token reaches the repo — then"
@@ -493,6 +536,16 @@ verify_role() {
   # leaves the recorded ids in place, and a config block emitted from them would read as
   # finished while naming an identity this run never re-proved.
   clear_env VERIFIED
+
+  # Where before what, and both before the key is signed with: a key inside a work tree
+  # is one `git add .` from being published whatever its mode says, and this stage is
+  # what a config block is gated on. `read_private_key` refuses it in the same order.
+  if enclosing=$(repo_containing "$PEM_PATH"); then
+    warn "$PEM_PATH is inside the repository at $enclosing — role keys live outside every repo."
+    note "Nothing to .gitignore and nothing for a dispatched agent to stage by accident."
+    SKIPPED+=("$role: move the private key out of $enclosing to $KEY_DIR/$role.pem")
+    pause; return 0
+  fi
 
   if ! key_is_a_role_key "$PEM_PATH"; then
     warn "no role key at $PEM_PATH — it must be an RSA private key at mode 600."
