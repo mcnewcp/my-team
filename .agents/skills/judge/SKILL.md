@@ -8,22 +8,27 @@ An implementer has built an issue on a pull request. A reviewer has read that wo
 
 The reviewer reports everything it finds without ranking or self-censoring — that is its job, and the filtering is deliberately left to the actor with no stake in the list. So a long review is not evidence of a bad pull request, and a point being written down is not evidence that it is right.
 
-Invoked with an issue number and a pull request number. `gh` conventions are in `docs/agents/issue-tracker.md`.
+Invoked with a pull request number only. `gh` conventions are in `docs/agents/issue-tracker.md`.
 
 ## 1. Gather
 
 Read all of it before ruling on any of it:
 
-- **The issue** — `gh issue view <issue> --comments`. This is the spec, and the only authority on what the pull request was supposed to do.
+- **The pull request identity** — read its `closingIssuesReferences` and `headRefOid`. Resolve exactly one closing issue; a missing or ambiguous link leaves no trustworthy spec, so post nothing and report the linkage problem.
+- **The issue** — `gh issue view <inferred issue> --comments`. This is the spec, and the only authority on what the pull request was supposed to do.
 - **The pull request** — `gh pr view <pr> --comments`, for the description, the reviewer's findings, the implementer's closing report, and any ledger you posted in an earlier round.
 - **The diff** — `gh pr diff <pr>`, whole, not the delta since the review.
-- **The head, and whether the code moved** — compare the review comment's `createdAt` against `gh pr view <pr> --json commits --jq '.commits[-1].committedDate'`. Commits landing after the review mean some points may already be addressed; check each against the current tree rather than against the tree the reviewer saw.
+- **The reviewed head** — read it from the review header `Reviewing #<issue> on #<pr> at <head sha>.` The issue and pull request numbers must match the inferred issue and named pull request, and the reviewed SHA must equal the current `headRefOid`.
 
 The review is normally the most recent comment. When it is not, find the newest comment that is one and name it in the ledger header, so there is no doubt which list you ruled on.
+
+A missing or malformed review header, an identity mismatch, or a stale reviewed SHA ends the invocation without a ledger. Report that a fresh `review-pr` run is required. Judging the old points against the current tree cannot account for code added after the review snapshot.
 
 ## 2. Enumerate the points
 
 Extract the reviewer's suggested changes as a numbered list, **in the reviewer's own order and numbering**. Keep nested numbering (`3a`, `3b`) as the reviewer wrote it: the ledger has to be checkable against the review by eye, one line to one point.
+
+When the content after the review header is exactly `No requested changes.`, the review contains zero points. Continue to publish the ledger with `None.` in every bucket; the sentence is the empty-list marker, not a prose finding.
 
 Where the reviewer wrote prose rather than a numbered list, number it in reading order and say so in the header. Where one numbered item smuggles in two unrelated changes, rule on the item as its dominant change and name the second in your reasoning.
 
