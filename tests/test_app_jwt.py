@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from der_encoding import as_pem, der, der_integer
 from my_team.core.app_jwt import (
     JWT_LIFETIME_SECONDS,
     JWT_SKEW_SECONDS,
@@ -172,23 +173,7 @@ def test_a_key_that_is_a_public_key_is_refused(keys: Path) -> None:
 # Every case below is a DER structure no real key has: a modulus too small to pad, a
 # length field wider than an integer, a value claiming more bytes than the key holds.
 # They are written out by hand because that is the only way to reach the branches that
-# refuse them.
-
-
-def der(tag: int, value: bytes) -> bytes:
-    if len(value) < 0x80:
-        return bytes([tag, len(value)]) + value
-    length = len(value).to_bytes((len(value).bit_length() + 7) // 8, "big")
-    return bytes([tag, 0x80 | len(length)]) + length + value
-
-
-def der_integer(value: int) -> bytes:
-    return der(0x02, value.to_bytes(max(1, (value.bit_length() + 8) // 8), "big"))
-
-
-def as_pem(label: str, body: bytes) -> str:
-    encoded = base64.encodebytes(body).decode()
-    return f"-----BEGIN {label}-----\n{encoded}-----END {label}-----\n"
+# refuse them, with the encoder `tests/der_encoding.py` also builds `rsa_pem` from.
 
 
 def test_a_modulus_too_small_to_pad_is_refused() -> None:

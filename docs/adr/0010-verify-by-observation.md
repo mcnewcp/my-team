@@ -24,9 +24,17 @@ exits `0`, and an interrupted run shares its exit code with a failed one. Claude
 same failure mode from the other direction — a blocked tool yields exit `0`, `is_error: false`,
 and the failure present only as English prose, in five distinct denial shapes.
 
-So `returncode` is read nowhere in this system. An orchestrator that trusted it would report a
-merged feature to a human who was not watching, which is the specific failure this project
-cannot have.
+So a **harness's** `returncode` is read nowhere in this system. An orchestrator that trusted it
+would report a merged feature to a human who was not watching, which is the specific failure this
+project cannot have.
+
+The claim is exactly that narrow, and the narrowing is load-bearing. `gh`'s exit status *is* read,
+in `my_team.github_cli`: one invocation makes one API call, and its status reports whether that
+call reached GitHub and came back. That is a transport fact about a request, not an account of a
+task — nothing the state machine turns on is inferred from it, and every such fact still comes out
+of the response body. What this decision refuses is a process whose exit code stands in for an
+agent's report of its own work. A process whose exit code says only "the request failed" is a
+different thing, and reading it is how the failure gets named instead of guessed at.
 
 ## Considered options
 

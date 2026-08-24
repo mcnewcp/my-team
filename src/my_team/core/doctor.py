@@ -120,7 +120,7 @@ class HarnessFacts:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerFacts:
+class ProductOwnerFacts:
     """What the `permission` API says about the login config names as product owner."""
 
     login: str
@@ -129,7 +129,12 @@ class OwnerFacts:
 
 @dataclass(frozen=True, slots=True)
 class RepoFacts:
-    """The target repo's merge policy and label set."""
+    """The target repo's merge policy and label set.
+
+    `labels` carries `Unavailable` on its own because it is its own request. A listing
+    that fails says nothing about the merge policy GitHub described in the call before
+    it, and nothing about the default branch that protection is then read off.
+    """
 
     name_with_owner: str
     default_branch: str
@@ -137,7 +142,7 @@ class RepoFacts:
     allow_merge_commit: bool
     allow_rebase_merge: bool
     delete_branch_on_merge: bool
-    labels: tuple[str, ...]
+    labels: tuple[str, ...] | Unavailable
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,9 +171,13 @@ class RoleFacts:
     with it. `key_path` is `declared.key_path` expanded, which is why it is a fact —
     expansion depends on `$HOME`, and the core never reads the environment.
 
-    `installation_reaches_repo` is `None` when the target repo could not be named, which
-    is the one question here that needs `gh`: the rest of a role's identity is provable
-    with its own key alone, and stays checkable when the human's login is not.
+    The last two fields are asked of two different services, so each carries its own
+    `Unavailable` and neither stands in for the other. Coverage is the one check here
+    §1 does not enumerate — an addition that must never suppress a requirement — while
+    the bot id is looked up as the human, which makes a failed `gh` its answer rather
+    than a bot account that "did not resolve". `installation_reaches_repo` is `None`
+    when the target repo could not be named at all: the rest of a role's identity is
+    provable with its own key alone, and stays checkable when the human's login is not.
     """
 
     declared: RoleConfig
@@ -177,8 +186,8 @@ class RoleFacts:
     key_inside_repo: bool
     app_slug: str | None
     installation_resolved: bool
-    installation_reaches_repo: bool | None
-    bot_user_id: int | None
+    installation_reaches_repo: bool | Unavailable | None
+    bot_user_id: int | Unavailable | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +197,7 @@ class Facts:
     gh: GhFacts | Unavailable
     harness: HarnessFacts | Unavailable
     config: Config | Unavailable
-    owner: OwnerFacts | Unavailable
+    product_owner: ProductOwnerFacts | Unavailable
     repo: RepoFacts | Unavailable
     protection: Protection | Unprotected | Unavailable
     roles: Mapping[str, RoleFacts | Unavailable]
@@ -208,9 +217,9 @@ def _findings(facts: Facts) -> Iterator[Finding]:
     yield _config(facts.config)
     if not isinstance(facts.config, Unavailable):
         yield _required_checks(facts.config)
-    yield _product_owner(facts.owner)
+    yield _product_owner(facts.product_owner)
     for name in ROLE_NAMES:
-        yield _role(name, facts.roles.get(name))
+        yield from _role(name, facts.roles.get(name))
     yield _merge_policy(facts.repo)
     yield _labels(facts.repo)
     yield from _protection(facts.protection)
@@ -265,87 +274,144 @@ def _required_checks(config: Config) -> Finding:
     return _advisory("required checks", Status.PASS, ", ".join(config.required_checks))
 
 
-def _product_owner(owner: OwnerFacts | Unavailable) -> Finding:
-    if isinstance(owner, Unavailable):
-        return _blocking("product owner", Status.FAIL, owner.reason)
-    if owner.permission not in WRITE_PERMISSIONS:
+def _product_owner(facts: ProductOwnerFacts | Unavailable) -> Finding:
+    if isinstance(facts, Unavailable):
+        return _blocking("product owner", Status.FAIL, facts.reason)
+    if facts.permission not in WRITE_PERMISSIONS:
         return _blocking(
             "product owner",
             Status.FAIL,
-            f"{owner.login} has {owner.permission} — the product owner needs write or admin, "
+            f"{facts.login} has {facts.permission} — the product owner needs write or admin, "
             f"or their guidance is invisible to every prompt",
         )
-    return _blocking("product owner", Status.PASS, f"{owner.login} has {owner.permission}")
+    return _blocking("product owner", Status.PASS, f"{facts.login} has {facts.permission}")
 
 
-def _role(name: str, facts: RoleFacts | Unavailable | None) -> Finding:
+def _role(name: str, facts: RoleFacts | Unavailable | None) -> Sequence[Finding]:
+    """The role's own verdict, and — only when it could not be asked — one advisory line.
+
+    Whether the installation covers this repo is the one role check the spec's §1 does
+    not enumerate. A definite *no* belongs on the blocking line, because it is a
+    misconfiguration exactly like a wrong `bot_user_id`. A probe that could not answer
+    belongs nowhere near it: severity is fixed per check and never per outcome, so the
+    question that cannot block gets its own name and its own advisory severity rather
+    than a warning wearing a blocking one.
+    """
     check = f"role {name}"
     if facts is None:
-        return _blocking(check, Status.FAIL, "no entry — the roster is exactly three roles")
+        return [_blocking(check, Status.FAIL, "no entry — the roster is exactly three roles")]
     if isinstance(facts, Unavailable):
-        return _blocking(check, Status.FAIL, facts.reason)
+        return [_blocking(check, Status.FAIL, facts.reason)]
+    return [*_identity(check, facts), *_coverage(check, facts)]
 
+
+def _identity(check: str, facts: RoleFacts) -> Sequence[Finding]:
+    """Everything §1 requires of a role, in the order a human can act on it."""
     declared = facts.declared
     if facts.key_mode is None:
-        return _blocking(check, Status.FAIL, f"no key at {facts.key_path}")
+        return [_blocking(check, Status.FAIL, f"no key at {facts.key_path}")]
     if facts.key_inside_repo:
         # A key inside the repo is one `git add .` from being published, which no file
         # mode prevents — so it is reported ahead of the mode.
-        return _blocking(
-            check,
-            Status.FAIL,
-            f"{facts.key_path} is inside the target repo — role keys live outside every repo",
-        )
+        return [
+            _blocking(
+                check,
+                Status.FAIL,
+                f"{facts.key_path} is inside the target repo — role keys live outside every repo",
+            )
+        ]
     if facts.key_mode != KEY_MODE:
-        return _blocking(
-            check,
-            Status.FAIL,
-            f"{facts.key_path} is mode {facts.key_mode:04o} — role keys are "
-            f"{KEY_MODE:04o}; run `chmod {KEY_MODE:o}` on it",
-        )
+        return [
+            _blocking(
+                check,
+                Status.FAIL,
+                f"{facts.key_path} is mode {facts.key_mode:04o} — role keys are "
+                f"{KEY_MODE:04o}; run `chmod {KEY_MODE:o}` on it",
+            )
+        ]
     if facts.app_slug is None:
-        return _blocking(
-            check,
-            Status.FAIL,
-            f"the key at {facts.key_path} does not authenticate as app_id {declared.app_id}",
-        )
+        return [
+            _blocking(
+                check,
+                Status.FAIL,
+                f"the key at {facts.key_path} does not authenticate as app_id {declared.app_id}",
+            )
+        ]
     if not facts.installation_resolved:
-        return _blocking(
-            check,
-            Status.FAIL,
-            f"installation_id {declared.installation_id} does not resolve for "
-            f"{facts.app_slug} — is the App installed anywhere?",
-        )
+        return [
+            _blocking(
+                check,
+                Status.FAIL,
+                f"installation_id {declared.installation_id} does not resolve for "
+                f"{facts.app_slug} — is the App installed anywhere?",
+            )
+        ]
     if facts.installation_reaches_repo is False:
         # Resolving proves the installation exists; this proves it is the one covering
         # the repo the loop is pointed at. Without it a role passes `doctor` and then
         # fails its first write.
-        return _blocking(
-            check,
-            Status.FAIL,
-            f"installation {declared.installation_id} does not cover this repo — "
-            f"install {facts.app_slug} on it, or config names the wrong installation",
-        )
+        return [
+            _blocking(
+                check,
+                Status.FAIL,
+                f"installation {declared.installation_id} does not cover this repo — "
+                f"install {facts.app_slug} on it, or config names the wrong installation",
+            )
+        ]
+    if isinstance(facts.bot_user_id, Unavailable):
+        return [
+            _blocking(
+                check,
+                Status.FAIL,
+                f"{facts.app_slug}[bot] was not looked up, so bot_user_id "
+                f"{declared.bot_user_id} is unconfirmed — {facts.bot_user_id.reason}",
+            )
+        ]
     if facts.bot_user_id is None:
-        return _blocking(
-            check,
-            Status.FAIL,
-            f"{facts.app_slug}[bot] did not resolve, so bot_user_id "
-            f"{declared.bot_user_id} is unconfirmed",
-        )
+        return [
+            _blocking(
+                check,
+                Status.FAIL,
+                f"{facts.app_slug}[bot] did not resolve, so bot_user_id "
+                f"{declared.bot_user_id} is unconfirmed",
+            )
+        ]
     if facts.bot_user_id != declared.bot_user_id:
-        return _blocking(
+        return [
+            _blocking(
+                check,
+                Status.FAIL,
+                f"bot_user_id is {declared.bot_user_id} but {facts.app_slug}[bot] "
+                f"is {facts.bot_user_id}",
+            )
+        ]
+    return [
+        _blocking(
             check,
-            Status.FAIL,
-            f"bot_user_id is {declared.bot_user_id} but {facts.app_slug}[bot] "
-            f"is {facts.bot_user_id}",
+            Status.PASS,
+            f"app {declared.app_id} · installation {declared.installation_id} · "
+            f"{facts.app_slug}[bot] {facts.bot_user_id}",
         )
-    return _blocking(
-        check,
-        Status.PASS,
-        f"app {declared.app_id} · installation {declared.installation_id} · "
-        f"{facts.app_slug}[bot] {facts.bot_user_id}",
-    )
+    ]
+
+
+def _coverage(check: str, facts: RoleFacts) -> Sequence[Finding]:
+    """One line, and only when the repo-coverage probe failed outright.
+
+    Silent when it answered either way — `True` needs no saying and `False` is already
+    on the blocking line — and silent when the repo could not be named at all, because
+    then `gh` has failed its own check and this has nothing to add to it.
+    """
+    if not isinstance(facts.installation_reaches_repo, Unavailable):
+        return []
+    return [
+        _advisory(
+            f"{check} coverage",
+            Status.WARN,
+            f"whether installation {facts.declared.installation_id} covers this repo "
+            f"could not be checked — {facts.installation_reaches_repo.reason}",
+        )
+    ]
 
 
 def _merge_policy(repo: RepoFacts | Unavailable) -> Finding:
@@ -384,6 +450,8 @@ def _merge_problems(repo: RepoFacts) -> str:
 def _labels(repo: RepoFacts | Unavailable) -> Finding:
     if isinstance(repo, Unavailable):
         return _blocking("labels", Status.FAIL, repo.reason)
+    if isinstance(repo.labels, Unavailable):
+        return _blocking("labels", Status.FAIL, repo.labels.reason)
 
     missing = [name for name in (AUTHORIZATION_LABEL, ESCALATION_LABEL) if name not in repo.labels]
     if missing:

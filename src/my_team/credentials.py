@@ -19,9 +19,10 @@ controls and revocation takes seconds.
 from __future__ import annotations
 
 import json
+import stat
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
@@ -58,9 +59,14 @@ class AppApiError(CredentialError):
 
 @dataclass(frozen=True, slots=True)
 class InstallationToken:
-    """A role's credential for one hour. Never persisted, never logged."""
+    """A role's credential for one hour. Never persisted, never logged.
 
-    token: str
+    Never logged is enforced rather than remembered: a dataclass prints every field it
+    has, and `repr` is what a traceback frame, a failed assertion and an idle `print`
+    all reach for. Keeping the secret out of it makes the rule a property of the type.
+    """
+
+    token: str = field(repr=False)
     expires_at: str
 
 
@@ -74,11 +80,19 @@ def key_file(role: RoleConfig) -> Path:
 
 
 def key_mode(path: Path) -> int | None:
-    """The file's permission bits, or `None` when there is no file there."""
+    """A regular file's permission bits, or `None` when there is no key file there.
+
+    Only a regular file counts. A directory at the key's path has permission bits like
+    anything else, and a `0600` one would otherwise clear the mode check and fail as an
+    `IsADirectoryError` two calls later — a traceback where a named precondition
+    belongs. A path the filesystem refuses to stat at all is the same answer for the
+    same reason: whatever is there, it is not a key anything can read.
+    """
     try:
-        return path.stat().st_mode & 0o777
-    except FileNotFoundError:
+        found = path.stat()
+    except OSError:
         return None
+    return found.st_mode & 0o777 if stat.S_ISREG(found.st_mode) else None
 
 
 def read_private_key(path: Path) -> str:
@@ -88,7 +102,13 @@ def read_private_key(path: Path) -> str:
         raise CredentialError(f"no private key at {path}")
     if mode != KEY_MODE:
         raise CredentialError(f"{path} is mode {mode:04o} — role keys are {KEY_MODE:04o}")
-    return path.read_text()
+    try:
+        return path.read_text()
+    except (OSError, UnicodeDecodeError) as error:
+        # A key is text or it is not a key. Both halves — the file that will not open
+        # and the bytes that will not decode — are the same finding to a caller, and
+        # neither is a traceback out of a diagnostic.
+        raise CredentialError(f"{path} could not be read — {error}") from error
 
 
 def app_jwt_for(role: RoleConfig, *, now: int) -> str:

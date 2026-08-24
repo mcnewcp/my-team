@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Mapping
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Final
 
@@ -30,7 +31,7 @@ from my_team.core.doctor import (
     Facts,
     GhFacts,
     HarnessFacts,
-    OwnerFacts,
+    ProductOwnerFacts,
     Protection,
     RepoFacts,
     RoleFacts,
@@ -55,17 +56,20 @@ rather than a config key; the seam takes ownership of it when a second one arriv
 def probe(repo_root: Path, *, now: int) -> Facts:
     """Read every precondition `doctor` reports on. Writes nothing, anywhere."""
     gh = _gh()
+    # Who `gh` is logged in as, or nobody. Missing and unauthenticated are one answer to
+    # everything below, so they become one here rather than at each place that asks.
+    account = None if isinstance(gh, Unavailable) else gh.account
     config = _config(repo_root)
-    repository = _repository(gh, repo_root)
+    repository = _repository(account, repo_root)
     repo = _repo(repository, repo_root)
     return Facts(
         gh=gh,
         harness=_harness(),
         config=config,
-        owner=_owner(config, repository, repo_root),
+        product_owner=_product_owner(config, repository, repo_root),
         repo=repo,
         protection=_protection(repo, repo_root),
-        roles=_roles(config, repository, repo_root, now=now),
+        roles=_roles(config, account, repository, repo_root, now=now),
     )
 
 
@@ -94,9 +98,9 @@ def _config(repo_root: Path) -> Config | Unavailable:
         return Unavailable(str(error))
 
 
-def _repository(gh: GhFacts | Unavailable, repo_root: Path) -> str | Unavailable:
+def _repository(account: str | None, repo_root: Path) -> str | Unavailable:
     """`owner/repo`, which everything below needs and nothing else supplies."""
-    if isinstance(gh, Unavailable) or gh.account is None:
+    if account is None:
         return Unavailable("not checked — `gh` could not identify an account")
     try:
         name = run_gh(
@@ -112,11 +116,6 @@ def _repo(repository: str | Unavailable, repo_root: Path) -> RepoFacts | Unavail
         return repository
     try:
         data = gh_json(["api", f"repos/{repository}"], cwd=repo_root)
-        # One name per line, so split on lines and not on whitespace: `good first issue`
-        # is one label.
-        labels = run_gh(
-            ["api", f"repos/{repository}/labels", "--paginate", "--jq", ".[].name"], cwd=repo_root
-        )
     except GhError as error:
         return Unavailable(error.reason)
     try:
@@ -127,15 +126,37 @@ def _repo(repository: str | Unavailable, repo_root: Path) -> RepoFacts | Unavail
             allow_merge_commit=bool(data["allow_merge_commit"]),
             allow_rebase_merge=bool(data["allow_rebase_merge"]),
             delete_branch_on_merge=bool(data["delete_branch_on_merge"]),
-            labels=tuple(labels.splitlines()),
+            labels=_labels(repository, repo_root),
         )
     except (KeyError, TypeError) as error:
         return Unavailable(f"{repository}: GitHub described the repo unrecognisably — {error}")
 
 
-def _owner(
+def _labels(repository: str, repo_root: Path) -> tuple[str, ...] | Unavailable:
+    """The repo's label names — a second request, so a second answer.
+
+    Folding this into the repo object made a failed label listing erase a merge policy
+    GitHub had already described, and skip protection, which needs nothing from here but
+    the default branch. Two requests fail in two ways and are reported as two.
+
+    Called from inside `_repo`'s own `try` deliberately: it raises neither of the two
+    types that handler catches, and asking GitHub a second question after it answered
+    the first unrecognisably buys nothing.
+    """
+    try:
+        # One name per line, so split on lines and not on whitespace: `good first issue`
+        # is one label.
+        listed = run_gh(
+            ["api", f"repos/{repository}/labels", "--paginate", "--jq", ".[].name"], cwd=repo_root
+        )
+    except GhError as error:
+        return Unavailable(error.reason)
+    return tuple(listed.splitlines())
+
+
+def _product_owner(
     config: Config | Unavailable, repository: str | Unavailable, repo_root: Path
-) -> OwnerFacts | Unavailable:
+) -> ProductOwnerFacts | Unavailable:
     """The one round trip to the `permission` API the design allows itself.
 
     Without it a mistyped login makes the human's own guidance silently invisible to
@@ -153,7 +174,7 @@ def _owner(
         ).strip()
     except GhError as error:
         return Unavailable(f"{login}: {error.reason}")
-    return OwnerFacts(login=login, permission=permission)
+    return ProductOwnerFacts(login=login, permission=permission)
 
 
 def _protection(
@@ -198,6 +219,7 @@ def _protection_of(branch: str, data: Any) -> Protection | Unavailable:
 
 def _roles(
     config: Config | Unavailable,
+    account: str | None,
     repository: str | Unavailable,
     repo_root: Path,
     *,
@@ -207,12 +229,18 @@ def _roles(
         return dict.fromkeys(ROLE_NAMES, Unavailable("not checked — the config did not parse"))
     named = None if isinstance(repository, Unavailable) else repository
     return {
-        name: _role(getattr(config.roles, name), named, repo_root, now=now) for name in ROLE_NAMES
+        name: _role(getattr(config.roles, name), account, named, repo_root, now=now)
+        for name in ROLE_NAMES
     }
 
 
 def _role(
-    role: RoleConfig, repository: str | None, repo_root: Path, *, now: int
+    role: RoleConfig,
+    account: str | None,
+    repository: str | None,
+    repo_root: Path,
+    *,
+    now: int,
 ) -> RoleFacts | Unavailable:
     path = key_file(role)
     mode = key_mode(path)
@@ -222,8 +250,8 @@ def _role(
         *,
         app_slug: str | None = None,
         installation_resolved: bool = False,
-        installation_reaches_repo: bool | None = None,
-        bot_user_id: int | None = None,
+        installation_reaches_repo: bool | Unavailable | None = None,
+        bot_user_id: int | Unavailable | None = None,
     ) -> RoleFacts:
         """What is known so far. Each step below adds one field and stops on failure."""
         return RoleFacts(
@@ -247,7 +275,12 @@ def _role(
 
     try:
         slug = app_get(jwt, "/app").get("slug")
-    except AppApiError:
+    except AppApiError as error:
+        if error.status != HTTPStatus.UNAUTHORIZED:
+            # A rate limit or a 5xx says nothing about whose key this is. Reporting one
+            # as a credential mismatch would name the wrong unmet condition, which is
+            # the single thing this command exists not to do.
+            return Unavailable(str(error))
         # The key parsed and GitHub refused it, which is exactly the claim the finding
         # makes: this key is not app_id's key.
         return found()
@@ -259,26 +292,21 @@ def _role(
     try:
         app_get(jwt, f"/app/installations/{role.installation_id}")
     except AppApiError as error:
-        if error.status != 404:
+        if error.status != HTTPStatus.NOT_FOUND:
             return Unavailable(str(error))
         return found(app_slug=slug)
     except CredentialError as error:
         return Unavailable(str(error))
 
-    reaches = _reaches(jwt, repository, role)
-    if isinstance(reaches, Unavailable):
-        # Say what was already proven. This check is the one thing here §1 does not
-        # enumerate, and a transient failure on it must not read as though the role's
-        # key, App and installation went unexamined too.
-        return Unavailable(
-            f"{slug} resolves and installation {role.installation_id} exists, but whether "
-            f"it covers this repo could not be checked — {reaches.reason}"
-        )
+    # Two last questions, asked of two different services and reported apart. Coverage
+    # is the one check here §1 does not enumerate and the bot id is one it requires, so
+    # letting either return early for the other put an addition in front of a
+    # requirement — and made a transient failure read as an unexamined role.
     return found(
         app_slug=slug,
         installation_resolved=True,
-        installation_reaches_repo=reaches,
-        bot_user_id=_bot_user(slug),
+        installation_reaches_repo=_reaches(jwt, repository, role),
+        bot_user_id=_bot_user(account, slug),
     )
 
 
@@ -300,19 +328,24 @@ def _reaches(jwt: str, repository: str | None, role: RoleConfig) -> bool | Unava
             app_get(jwt, f"/repos/{repository}/installation").get("id") == role.installation_id
         )
     except AppApiError as error:
-        if error.status == 404:
+        if error.status == HTTPStatus.NOT_FOUND:
             return False
         return Unavailable(str(error))
     except CredentialError as error:
         return Unavailable(str(error))
 
 
-def _bot_user(slug: str) -> int | None:
+def _bot_user(account: str | None, slug: str) -> int | Unavailable | None:
     """The numeric id reviews are matched on, which is not derivable from `app_id`.
 
-    Looked up as the human: `/users/...` is not an endpoint an App JWT may reach. The
-    login is percent-encoded because the account really is called `<slug>[bot]`.
+    Looked up as the human: `/users/...` is not an endpoint an App JWT may reach — so
+    when `gh` is the thing that failed, `gh` is what gets reported. Collapsing that to
+    "the bot did not resolve" named three bot accounts as the problem when the problem
+    was one login. The slug is percent-encoded because the account really is called
+    `<slug>[bot]`.
     """
+    if account is None:
+        return Unavailable(f"`{GH}` could not identify an account")
     try:
         return int(run_gh(["api", f"/users/{slug}%5Bbot%5D", "--jq", ".id"]).strip())
     except (GhError, ValueError):

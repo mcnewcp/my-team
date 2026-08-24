@@ -13,13 +13,14 @@ from typing import Any
 
 import pytest
 
+from findings import checks, find, status_of
 from my_team.core.config import Config, RoleConfig, Roles
 from my_team.core.doctor import (
     Facts,
     Finding,
     GhFacts,
     HarnessFacts,
-    OwnerFacts,
+    ProductOwnerFacts,
     Protection,
     RepoFacts,
     RoleFacts,
@@ -31,6 +32,8 @@ from my_team.core.doctor import (
     render,
 )
 from my_team.core.labels import AUTHORIZATION_LABEL, ESCALATION_LABEL
+
+LABELS = (AUTHORIZATION_LABEL, ESCALATION_LABEL, "bug")
 
 ROLE = RoleConfig(
     app_id=4652114,
@@ -73,7 +76,7 @@ def a_repo(**overrides: Any) -> RepoFacts:
         "allow_merge_commit": False,
         "allow_rebase_merge": False,
         "delete_branch_on_merge": True,
-        "labels": (AUTHORIZATION_LABEL, ESCALATION_LABEL, "bug"),
+        "labels": LABELS,
     }
     values.update(overrides)
     return RepoFacts(**values)
@@ -85,25 +88,13 @@ def healthy(**overrides: Any) -> Facts:
         "gh": GhFacts(path="/opt/homebrew/bin/gh", account="mcnewcp"),
         "harness": HarnessFacts(binary="claude", path="/Users/mcnewcp/.local/bin/claude"),
         "config": a_config(),
-        "owner": OwnerFacts(login="mcnewcp", permission="admin"),
+        "product_owner": ProductOwnerFacts(login="mcnewcp", permission="admin"),
         "repo": a_repo(),
         "protection": Unprotected(branch="main"),
         "roles": {"implementer": a_role(), "reviewer": a_role(), "judge": a_role()},
     }
     values.update(overrides)
     return Facts(**values)
-
-
-def find(facts: Facts, check: str) -> Finding:
-    return next(f for f in evaluate(facts).findings if f.check == check)
-
-
-def status_of(facts: Facts, check: str) -> Status:
-    return find(facts, check).status
-
-
-def checks(facts: Facts) -> tuple[str, ...]:
-    return tuple(f.check for f in evaluate(facts).findings)
 
 
 # ── The diagnosis as a whole ────────────────────────────────────────────────────────
@@ -237,14 +228,15 @@ def test_the_required_checks_line_is_dropped_when_the_config_did_not_parse() -> 
 
 @pytest.mark.parametrize("permission", ["admin", "write"])
 def test_a_product_owner_who_can_write_passes(permission: str) -> None:
-    facts = healthy(owner=OwnerFacts(login="mcnewcp", permission=permission))
+    facts = healthy(product_owner=ProductOwnerFacts(login="mcnewcp", permission=permission))
 
     assert status_of(facts, "product owner") is Status.PASS
 
 
 @pytest.mark.parametrize("permission", ["read", "triage", "none"])
 def test_a_product_owner_who_cannot_write_fails(permission: str) -> None:
-    finding = find(healthy(owner=OwnerFacts(login="ana", permission=permission)), "product owner")
+    facts = healthy(product_owner=ProductOwnerFacts(login="ana", permission=permission))
+    finding = find(facts, "product owner")
 
     assert finding.status is Status.FAIL
     assert "ana" in finding.detail
@@ -253,7 +245,7 @@ def test_a_product_owner_who_cannot_write_fails(permission: str) -> None:
 
 def test_a_product_owner_that_could_not_be_resolved_fails() -> None:
     reason = "no such user: mcnewcpp"
-    finding = find(healthy(owner=Unavailable(reason)), "product owner")
+    finding = find(healthy(product_owner=Unavailable(reason)), "product owner")
 
     assert finding.status is Status.FAIL
     assert finding.detail == reason
@@ -351,6 +343,47 @@ def test_a_bot_user_that_does_not_resolve_leaves_the_id_unconfirmed() -> None:
     assert "unconfirmed" in finding.detail
 
 
+def test_a_coverage_check_that_could_not_run_gets_its_own_advisory_line() -> None:
+    """Covering this repo is the one role check §1 does not enumerate.
+
+    Severity is fixed per check and never per outcome, so the question that cannot block
+    cannot be a warning on the line that can. It gets its own name, and the blocking line
+    goes on saying that everything §1 does ask for was proven.
+    """
+    facts = with_role("judge", a_role(installation_reaches_repo=Unavailable("connection reset")))
+    identity, coverage = find(facts, "role judge"), find(facts, "role judge coverage")
+
+    assert identity.status is Status.PASS
+    assert "318751706" in identity.detail, "the required checks all passed and still say so"
+    assert coverage.severity is Severity.ADVISORY
+    assert coverage.status is Status.WARN
+    assert "could not be checked" in coverage.detail
+    assert "connection reset" in coverage.detail
+    assert evaluate(facts).ok
+
+
+@pytest.mark.parametrize("reaches", [True, False, None])
+def test_a_coverage_check_that_answered_adds_no_line_of_its_own(reaches: bool | None) -> None:
+    # `True` needs no saying, `False` is already on the blocking line, and `None` means
+    # `gh` could not name the repo — which is `gh`'s own failing check, not this one's.
+    facts = with_role("judge", a_role(installation_reaches_repo=reaches))
+
+    assert "role judge coverage" not in checks(facts)
+
+
+def test_a_bot_id_that_was_never_looked_up_names_the_prerequisite_and_not_the_bot() -> None:
+    # `/users/...` is looked up as the human, so `gh` failing is `gh`'s finding. Saying
+    # the bot "did not resolve" puts three misleading lines under the one true one.
+    facts = with_role(
+        "judge", a_role(bot_user_id=Unavailable("`gh` could not identify an account"))
+    )
+    finding = find(facts, "role judge")
+
+    assert finding.status is Status.FAIL
+    assert "did not resolve" not in finding.detail
+    assert "could not identify an account" in finding.detail
+
+
 def test_a_role_that_could_not_be_probed_fails_with_the_reason() -> None:
     finding = find(with_role("reviewer", Unavailable("the config did not parse")), "role reviewer")
 
@@ -414,13 +447,23 @@ def test_a_repo_that_could_not_be_read_fails_both_checks_that_need_it() -> None:
     assert status_of(facts, "labels") is Status.FAIL
 
 
+def test_a_label_listing_that_failed_fails_only_the_label_check() -> None:
+    # Two requests, two answers: the merge policy GitHub already described is not put in
+    # doubt by a listing that timed out beside it.
+    facts = healthy(repo=a_repo(labels=Unavailable("gh api repos/.../labels: timed out")))
+
+    assert status_of(facts, "labels") is Status.FAIL
+    assert status_of(facts, "merge policy") is Status.PASS
+    assert "timed out" in find(facts, "labels").detail
+
+
 def test_both_labels_present_passes() -> None:
     assert status_of(healthy(), "labels") is Status.PASS
 
 
 @pytest.mark.parametrize("missing", [AUTHORIZATION_LABEL, ESCALATION_LABEL])
 def test_a_missing_label_fails_and_names_it(missing: str) -> None:
-    remaining = tuple(name for name in a_repo().labels if name != missing)
+    remaining = tuple(name for name in LABELS if name != missing)
     finding = find(healthy(repo=a_repo(labels=remaining)), "labels")
 
     assert finding.status is Status.FAIL

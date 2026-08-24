@@ -21,18 +21,21 @@ from typing import Any
 
 import pytest
 
+from findings import find, status_of
 from my_team.core.config import KEY_MODE
 from my_team.core.doctor import (
     GhFacts,
     HarnessFacts,
-    OwnerFacts,
+    ProductOwnerFacts,
     Protection,
     RepoFacts,
     RoleFacts,
+    Status,
     Unavailable,
     Unprotected,
     evaluate,
 )
+from my_team.github_cli import GH
 from my_team.probe import HARNESS_BINARY, probe
 
 NOW = 1_755_000_000
@@ -76,6 +79,17 @@ SLUGS = {
 }
 INSTALLATIONS = {4652114: 155006997, 4608397: 154043927, 4652145: 155007556}
 REPO_INSTALLATION = f"/repos/{REPO}/installation"
+
+
+def refused(status: int, path: str) -> urllib.error.HTTPError:
+    """What `urlopen` raises when GitHub answers with a status rather than a body."""
+    return urllib.error.HTTPError(
+        f"https://api.github.com{path}",
+        status,
+        "refused",
+        email.message.Message(),
+        io.BytesIO(b'{"message": "refused"}'),
+    )
 
 
 class Body(io.BytesIO):
@@ -239,7 +253,7 @@ def test_a_label_with_spaces_in_it_stays_one_label(world: World, repo_root: Path
 def test_the_product_owner_is_resolved_against_the_permission_api(
     world: World, repo_root: Path
 ) -> None:
-    assert probed(repo_root).owner == OwnerFacts(login="mcnewcp", permission="admin")
+    assert probed(repo_root).product_owner == ProductOwnerFacts(login="mcnewcp", permission="admin")
     assert [call for call in world.gh_calls if "collaborators/mcnewcp/permission" in " ".join(call)]
 
 
@@ -313,15 +327,23 @@ def test_a_key_inside_the_target_repo_is_noticed(
 
 
 def test_a_key_github_refuses_leaves_the_role_unproven(world: World, repo_root: Path) -> None:
-    world.app_override = urllib.error.HTTPError(
-        "https://api.github.com/app",
-        401,
-        "Unauthorized",
-        email.message.Message(),
-        io.BytesIO(b"{}"),
-    )
+    world.app_override = refused(401, "/app")
 
     assert role(probed(repo_root)).app_slug is None
+
+
+@pytest.mark.parametrize("status", [403, 429, 500, 502])
+def test_github_failing_app_for_a_reason_that_is_not_the_key_is_not_blamed_on_the_key(
+    world: World, repo_root: Path, status: int
+) -> None:
+    # `401` is the one status that says this key is not `app_id`'s key. A rate limit or
+    # a 5xx says nothing about whose key it is, and reporting it as a credential
+    # mismatch names the wrong unmet condition — the one thing doctor exists not to do.
+    world.app_override = refused(status, "/app")
+    found = role(probed(repo_root))
+
+    assert isinstance(found, Unavailable)
+    assert str(status) in found.reason
 
 
 def test_an_installation_that_is_gone_is_reported_as_unresolved(
@@ -369,40 +391,50 @@ def test_a_repo_that_could_not_be_named_leaves_that_one_question_unasked(
     assert found.bot_user_id == 318751706
 
 
-def test_a_role_that_fails_only_the_repo_check_still_says_what_was_proven(
-    world: World, repo_root: Path
+@pytest.mark.parametrize(
+    "refusal",
+    [urllib.error.URLError("connection reset"), refused(403, REPO_INSTALLATION)],
+)
+def test_a_coverage_check_that_could_not_run_still_reports_what_was_proven(
+    world: World, repo_root: Path, refusal: Exception
 ) -> None:
     # Covering this repo is the one thing here §1 does not enumerate, so a transient
     # failure on it must not read as though the key, App and installation went
-    # unexamined too.
-    world.repo_installation_override = urllib.error.URLError("connection reset")
+    # unexamined too — nor swallow the checks §1 does name.
+    world.repo_installation_override = refusal
     found = role(probed(repo_root))
 
-    assert isinstance(found, Unavailable)
-    assert "implementer-my-team resolves" in found.reason
-    assert "155006997 exists" in found.reason
-    assert "could not be checked" in found.reason
+    assert isinstance(found, RoleFacts)
+    assert found.app_slug == "implementer-my-team"
+    assert found.installation_resolved
+    assert found.bot_user_id == 318751706
+    assert isinstance(found.installation_reaches_repo, Unavailable)
 
 
-@pytest.mark.parametrize(
-    "refusal",
-    [
-        urllib.error.URLError("connection reset"),
-        urllib.error.HTTPError(
-            f"https://api.github.com{REPO_INSTALLATION}",
-            403,
-            "Forbidden",
-            email.message.Message(),
-            io.BytesIO(b"{}"),
-        ),
-    ],
-)
-def test_github_refusing_the_repo_installation_for_another_reason_is_reported(
-    world: World, repo_root: Path, refusal: Exception
+def test_a_coverage_check_that_could_not_run_warns_and_never_blocks(
+    world: World, repo_root: Path
 ) -> None:
-    world.repo_installation_override = refusal
+    world.repo_installation_override = urllib.error.URLError("connection reset")
+    facts = probed(repo_root)
 
-    assert isinstance(role(probed(repo_root)), Unavailable)
+    assert status_of(facts, "role implementer") is Status.PASS
+    assert status_of(facts, "role implementer coverage") is Status.WARN
+    assert evaluate(facts).ok, "an addition to §1's list cannot block when it cannot run"
+
+
+def test_a_bot_user_id_that_disagrees_is_still_caught_when_coverage_could_not_run(
+    world: World, repo_root: Path
+) -> None:
+    # #51 requires every `bot_user_id` be matched against the API. That check ran second
+    # and behind an early return, so a transient failure of the extra coverage probe
+    # suppressed a required one.
+    world.repo_installation_override = urllib.error.URLError("connection reset")
+    world.gh["api /users/implementer-my-team%5Bbot%5D --jq .id"] = "999\n"
+    finding = find(probed(repo_root), "role implementer")
+
+    assert finding.status is Status.FAIL
+    assert "318751706" in finding.detail
+    assert "999" in finding.detail
 
 
 def test_a_bot_user_that_cannot_be_looked_up_is_left_unconfirmed(
@@ -411,6 +443,51 @@ def test_a_bot_user_that_cannot_be_looked_up_is_left_unconfirmed(
     del world.gh["api /users/implementer-my-team%5Bbot%5D --jq .id"]
 
     assert role(probed(repo_root)).bot_user_id is None
+
+
+def test_gh_being_the_thing_at_fault_is_what_the_bot_id_line_says(
+    world: World, repo_root: Path
+) -> None:
+    """`/users/...` is looked up as the human, so `gh` failing is `gh`'s finding.
+
+    Collapsing it to `None` reported three bot accounts that "did not resolve" when the
+    unmet condition was one login — three misleading lines under the true one.
+    """
+    del world.binaries["gh"]
+    found = role(probed(repo_root))
+
+    assert isinstance(found.bot_user_id, Unavailable)
+    assert GH in found.bot_user_id.reason
+    detail = find(probed(repo_root), "role implementer").detail
+    assert "did not resolve" not in detail
+    assert GH in detail
+
+
+def test_a_directory_where_a_role_key_belongs_reads_as_a_missing_key(
+    world: World, repo_root: Path
+) -> None:
+    # At mode 0600 a directory clears the mode check, and the read two calls later is an
+    # `IsADirectoryError` — a traceback out of the command whose whole job is to name
+    # the unmet precondition.
+    path = Path(role(probed(repo_root)).key_path)
+    path.unlink()
+    path.mkdir(mode=KEY_MODE)
+    facts = probed(repo_root)
+
+    assert role(facts).key_mode is None
+    assert str(path) in find(facts, "role implementer").detail
+
+
+def test_a_key_that_is_not_text_names_the_file_rather_than_raising(
+    world: World, repo_root: Path
+) -> None:
+    path = Path(role(probed(repo_root)).key_path)
+    path.write_bytes(b"\xff\xfe\x00\x01")
+    path.chmod(KEY_MODE)
+
+    found = role(probed(repo_root))
+    assert isinstance(found, Unavailable)
+    assert str(path) in found.reason
 
 
 def test_a_key_that_is_not_a_key_names_the_file(world: World, repo_root: Path) -> None:
@@ -521,7 +598,7 @@ def test_gh_missing_stops_everything_that_needs_it_and_says_why(
     facts = probed(repo_root)
 
     assert isinstance(facts.gh, Unavailable)
-    for absent in (facts.repo, facts.owner, facts.protection):
+    for absent in (facts.repo, facts.product_owner, facts.protection):
         assert isinstance(absent, Unavailable)
         assert "gh" in absent.reason
 
@@ -567,7 +644,7 @@ def test_a_missing_config_leaves_the_roles_unchecked_and_says_why(
     for unchecked in facts.roles.values():
         assert isinstance(unchecked, Unavailable)
         assert "config" in unchecked.reason
-    assert isinstance(facts.owner, Unavailable)
+    assert isinstance(facts.product_owner, Unavailable)
 
 
 def test_a_repo_github_describes_unrecognisably_is_reported(world: World, repo_root: Path) -> None:
@@ -588,14 +665,37 @@ def test_a_product_owner_who_is_not_a_collaborator_is_reported_by_login(
     del world.gh[f"api repos/{REPO}/collaborators/mcnewcp/permission --jq .permission"]
     facts = probed(repo_root)
 
-    assert isinstance(facts.owner, Unavailable)
-    assert "mcnewcp" in facts.owner.reason
+    assert isinstance(facts.product_owner, Unavailable)
+    assert "mcnewcp" in facts.product_owner.reason
 
 
-def test_labels_that_cannot_be_listed_leave_the_repo_unread(world: World, repo_root: Path) -> None:
+def test_a_repo_that_cannot_be_read_at_all_leaves_nothing_to_say_about_it(
+    world: World, repo_root: Path
+) -> None:
+    # The other half of the split: with the repo object itself unread there is no merge
+    # policy, no label set and no default branch to ask about protection.
+    del world.gh[f"api repos/{REPO}"]
+    facts = probed(repo_root)
+
+    assert isinstance(facts.repo, Unavailable)
+    assert isinstance(facts.protection, Unavailable)
+
+
+def test_labels_that_cannot_be_listed_leave_the_rest_of_the_repo_read(
+    world: World, repo_root: Path
+) -> None:
+    # The label list is its own request, so its failure is its own finding. Folding the
+    # two together reported a merge policy GitHub had already described correctly, and
+    # skipped protection, which needs nothing but the default branch.
     del world.gh[f"api repos/{REPO}/labels --paginate --jq .[].name"]
+    facts = probed(repo_root)
 
-    assert isinstance(probed(repo_root).repo, Unavailable)
+    assert isinstance(facts.repo, RepoFacts)
+    assert facts.repo.allow_squash_merge and not facts.repo.allow_merge_commit
+    assert isinstance(facts.repo.labels, Unavailable)
+    assert facts.protection == Unprotected(branch="main")
+    assert status_of(facts, "merge policy") is Status.PASS
+    assert status_of(facts, "labels") is Status.FAIL
 
 
 def test_a_hung_gh_does_not_hang_the_diagnosis(world: World, repo_root: Path) -> None:

@@ -238,18 +238,66 @@ _value_in() {
   printf '%s' "${line#*=}"
 }
 
+# clear_env KEY — drop KEY from ENV_FILE. The counterpart to write_env, for a value that
+# has stopped being true. Nothing here unwinds a write, so this is how one is unwound.
+clear_env() {
+  local key="$1" tmp
+  [[ -f "$ENV_FILE" ]] || return 0
+  tmp=$(mktemp)
+  grep -vE "^${key}=" "$ENV_FILE" > "$tmp" || true
+  mv "$tmp" "$ENV_FILE"
+}
+
+# key_is_a_role_key PATH — a regular file, at mode 600, that openssl reads as an RSA
+# private key. All three, because `my-team doctor` blocks on all three and
+# `credentials.read_private_key` refuses to read past them.
+#
+# A regular file and not merely something with the right bits: a 0600 *directory* has
+# them too, and everything downstream reads the path as a file. And read back rather
+# than assumed: a re-sync never re-downloads the key, so if this does not look at it
+# nothing does — the wizard signs with it anyway, openssl fails mid-pipeline, and
+# `set -e` takes the whole three-role run down where one named file would do.
+key_is_a_role_key() {
+  local path="$1" mode
+  [[ -f "$path" ]] || return 1
+  # `stat` spells this differently on GNU and on BSD, and each writes nothing to stdout
+  # when it rejects the other's flag — so trying both in order is safe.
+  mode=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%OLp' "$path" 2>/dev/null) || return 1
+  # Masked to the low nine bits, because the two spellings disagree above them: GNU `%a`
+  # reports setuid, setgid and sticky where BSD `%OLp` drops them, so an unmasked
+  # comparison would pass a mode-2600 key on macOS and fail the same key on Linux.
+  # `credentials.key_mode` masks to 0o777, and this is the file it will be reading.
+  [[ "$mode" =~ ^[0-7]+$ ]] || return 1
+  (( (8#$mode & 8#777) == 8#600 )) || return 1
+  openssl rsa -in "$path" -noout 2>/dev/null
+}
+
 # config_block ROLE — the [roles.ROLE] table to paste into .my-team/config.toml, or a
 # comment naming what is still missing. This is what the whole wizard is for: the ids
 # GitHub only shows once, in the shape the config parser accepts.
+#
+# Offered only for a role a verify stage proved end to end and whose key is still a role
+# key. Ids alone say only that *some* run once read them: every early return in that
+# stage leaves them exactly where they were, and a re-sync never re-downloads the key at
+# all. A block that looks finished is one a human pastes without reading it, so a stale
+# id is worse here than no block.
 config_block() {
-  local role="$1" env_file="$CONFIG_DIR/$1.env" app_id bot_user_id installation_id
+  local role="$1" env_file="$CONFIG_DIR/$1.env" key="$KEY_DIR/$1.pem"
+  local app_id bot_user_id installation_id missing=""
   app_id=$(_value_in "$env_file" APP_ID || true)
   bot_user_id=$(_value_in "$env_file" BOT_USER_ID || true)
   installation_id=$(_value_in "$env_file" INSTALLATION_ID || true)
 
-  if [[ -z "$app_id" || -z "$bot_user_id" || -z "$installation_id" ]]; then
-    printf '# [roles.%s] — not provisioned yet. Re-run this wizard and answer "%s".\n' \
-      "$role" "$role"
+  [[ -n "$app_id" ]]          || missing="$missing app_id,"
+  [[ -n "$bot_user_id" ]]     || missing="$missing bot_user_id,"
+  [[ -n "$installation_id" ]] || missing="$missing installation_id,"
+  [[ "$(_value_in "$env_file" VERIFIED || true)" == "$role" ]] \
+                              || missing="$missing a verification that finished,"
+  key_is_a_role_key "$key"    || missing="$missing a mode-600 key at $key,"
+
+  if [[ -n "$missing" ]]; then
+    printf '# [roles.%s] — not ready: missing%s.\n' "$role" "${missing%,}"
+    printf '# Re-run this wizard and answer "%s".\n' "$role"
     return 1
   fi
 
@@ -309,8 +357,9 @@ mkdir -p "$KEY_DIR"
 chmod 700 "$CONFIG_DIR" "$KEY_DIR"
 
 # Re-sync: an App already registered for a role only needs the verify stage, which
-# re-reads every id from the App itself. App names are editable, so a stored slug goes
-# stale on every rename — this is the repair path, not just a re-check.
+# re-reads every id from the App itself and re-checks the key it will be used with. App
+# names are editable, so a stored slug goes stale on every rename — this is the repair
+# path, not just a re-check.
 RESYNC_ROLES=""
 TOTAL_STAGES=1                       # the closing config-block stage
 for _role in $ROLES; do
@@ -439,14 +488,20 @@ install_app() {
 
 # ── Stage 4 — verify, and read back the ids config will key on ────────────
 verify_role() {
-  local role="$1" jwt app_json live_slug live_name token repos missing extra
+  local role="$1" jwt app_json live_slug live_name token repos missing extra proven=1
   stage "$role · verify and record the identity"
-  say "Proves the key signs, the app is installed, and its token reaches the repo —"
-  say "then reads back the numeric ids .my-team/config.toml keys on."
+  say "Proves the key is a role key and signs, that the app is installed, and that its"
+  say "token reaches the repo — then reads back the ids .my-team/config.toml keys on."
 
-  if [[ ! -f "$PEM_PATH" ]]; then
-    warn "no key at $PEM_PATH — can't verify. Re-run this wizard once the key is in place."
-    SKIPPED+=("$role: verification (mint an installation token)")
+  # The earlier verdict stops counting the moment this one starts. Every return below
+  # leaves the recorded ids in place, and a config block emitted from them would read as
+  # finished while naming an identity this run never re-proved.
+  clear_env VERIFIED
+
+  if ! key_is_a_role_key "$PEM_PATH"; then
+    warn "no role key at $PEM_PATH — it must be an RSA private key at mode 600."
+    note "A re-sync never re-downloads the key, so this is the one place it is checked."
+    SKIPPED+=("$role: store the private key at $PEM_PATH and chmod 600 it")
     pause; return 0
   fi
 
@@ -489,6 +544,7 @@ verify_role() {
   else
     warn "couldn't resolve ${APP_SLUG}[bot] — record the bot user id by hand"
     SKIPPED+=("$role: record BOT_USER_ID: gh api /users/${APP_SLUG}%5Bbot%5D --jq .id")
+    proven=0
   fi
 
   INSTALLATION_ID=$(app_api "$jwt" /app/installations | jq -r --arg a "$ACCOUNT" '
@@ -524,6 +580,7 @@ verify_role() {
     warn "the installation does not reach:$missing"
     note "it sees: ${repos:-nothing}"
     SKIPPED+=("$role: re-scope the installation to include$missing")
+    proven=0
   fi
   extra=$(printf '%s\n' "$repos" | grep -v '^$' \
             | grep -vxF "$(printf '%s\n' $TARGET_REPOS)" || true)
@@ -531,6 +588,14 @@ verify_role() {
     warn "the installation is scoped wider than the target set. It also reaches:"
     while read -r r; do [[ -n "$r" ]] && note "  - $r"; done <<<"$extra"
     SKIPPED+=("$role: narrow the installation to: $TARGET_REPOS")
+  fi
+
+  # Recorded last and only here: this is the one point at which every id above came back
+  # from GitHub in this run, over a key that is still a role key.
+  if (( proven )); then
+    write_env VERIFIED "$role"
+  else
+    warn "$role is not fully verified — no config block will be offered for it."
   fi
   pause
 }
@@ -553,6 +618,21 @@ for ROLE in $ROSTER; do
 done
 if (( INCOMPLETE )); then
   warn "one or more roles is not provisioned — the config above is not complete yet."
+fi
+
+# All three blocks are emitted whichever roles this run touched, because a config missing
+# two of them is not one anybody can paste. Which is only honest if it says so: a role
+# this run skipped had its key re-checked a moment ago and its ids read from GitHub
+# whenever it was last verified.
+CARRIED=""
+for ROLE in $ROSTER; do
+  [[ " $ROLES " == *" $ROLE "* ]] || CARRIED="$CARRIED $ROLE"
+done
+if [[ -n "$CARRIED" ]]; then
+  printf '\n'
+  note "carried forward from an earlier run:$CARRIED"
+  note "their keys were re-checked just now; their ids were read from GitHub then."
+  note '`my-team doctor` re-checks every id above against the API.'
 fi
 pause
 

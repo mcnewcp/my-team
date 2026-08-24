@@ -110,6 +110,48 @@ def test_a_key_that_is_not_0600_is_refused_rather_than_merely_reported(
         read_private_key(a_key(tmp_path, rsa_pem, mode=mode))
 
 
+@pytest.mark.parametrize("mode", [0o600, 0o700])
+def test_a_directory_where_the_key_should_be_is_no_key_rather_than_a_key(
+    tmp_path: Path, mode: int
+) -> None:
+    """Permission bits alone would let a `0600` directory through the mode check.
+
+    Whatever came next would then be an `IsADirectoryError` out of a read, which is a
+    crash where the whole point is a named precondition. Only a regular file is a
+    candidate for being a key.
+    """
+    directory = tmp_path / "implementer.pem"
+    directory.mkdir(mode=mode)
+
+    assert key_mode(directory) is None
+    with pytest.raises(CredentialError, match="no private key"):
+        read_private_key(directory)
+
+
+def test_a_path_the_filesystem_will_not_stat_is_no_key_either(tmp_path: Path) -> None:
+    # A symlink loop answers neither "here it is" nor "it is not there" — it raises. A
+    # key that cannot be reached is a key that is not there, and saying so beats a
+    # traceback out of a diagnostic.
+    (tmp_path / "a.pem").symlink_to(tmp_path / "b.pem")
+    (tmp_path / "b.pem").symlink_to(tmp_path / "a.pem")
+
+    assert key_mode(tmp_path / "a.pem") is None
+
+
+def test_a_key_that_is_not_text_is_refused_by_name_rather_than_raised_through(
+    tmp_path: Path,
+) -> None:
+    # GitHub hands out PEM, but a downloaded DER — or any truncated binary — sits at the
+    # same path with the same mode, and decoding it must fail the way every other
+    # unusable key does.
+    binary = tmp_path / "implementer.pem"
+    binary.write_bytes(b"\xff\xfe\x00\x01")
+    binary.chmod(KEY_MODE)
+
+    with pytest.raises(CredentialError, match=str(binary)):
+        read_private_key(binary)
+
+
 def test_the_jwt_is_signed_with_the_key_on_disk(tmp_path: Path, rsa_pem: str) -> None:
     token = app_jwt_for(role_with_key(a_key(tmp_path, rsa_pem)), now=1_755_000_000)
 
@@ -186,6 +228,26 @@ def test_minting_a_token_posts_to_the_role_s_own_installation(
     assert api.requests[0].get_method() == "POST"
     assert minted.token == "ghs_abc"
     assert minted.expires_at == "2026-08-23T13:00:00Z"
+
+
+def test_a_minted_token_never_appears_in_its_own_representation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rsa_pem: str
+) -> None:
+    """`InstallationToken` says it is never logged, so the default `repr` cannot hold it.
+
+    A dataclass prints every field, and `repr` is what a failed assertion, a traceback
+    frame and an idle `print` all reach for — so the invariant has to be a property of
+    the type rather than of everyone who handles one.
+    """
+    monkeypatch.setattr(
+        urllib.request, "urlopen", Api({"token": "ghs_abc", "expires_at": "2026-08-23T13:00:00Z"})
+    )
+
+    minted = installation_token(role_with_key(a_key(tmp_path, rsa_pem)), now=1_755_000_000)
+
+    assert "ghs_abc" not in repr(minted)
+    assert "2026-08-23T13:00:00Z" in repr(minted), "the expiry is not a secret and is worth seeing"
+    assert minted.token == "ghs_abc", "redacted from the representation, not from the value"
 
 
 # ── Where a token may travel ─────────────────────────────────────────────────────
