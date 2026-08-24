@@ -46,25 +46,35 @@ Rule each point on its own merits. A review whose every point is necessary now, 
 
 ## 4. Post the ledger
 
-One comment, via `gh pr comment <pr> --body "..."` with a heredoc. A header naming what you judged, one line per point, and a closing verdict:
+One comment, via `gh pr comment <pr> --body "..."` with a heredoc. A header names what you judged, then the three disposal buckets appear in this order. Every review point appears exactly once, under its disposal, and retains the reviewer's number and relative order within that bucket:
 
 ```
 Judging the review of #<issue> on #<pr> — <reviewer>'s comment of <timestamp>, against <head sha>.
 
-1. necessary now: <one sentence of reasoning>
-2. dropped: <one sentence of reasoning>
-3. worth keeping: <one sentence — and what to file>
+## Necessary now
 
-Blocked: 1 must land before merge. File 3 as a follow-up.
+- [ ] 1: <brief explanation>
+
+## Worth keeping
+
+- [ ] 3: <brief explanation — and what to file>
+
+## Dropped
+
+- [x] 2: <brief explanation>
+
+Merge is blocked while Necessary now contains an open item. Open Worth keeping items await follow-up triage.
 ```
 
-One sentence per point. The reasoning says why the disposal is right, citing the file, the issue's wording, or the standard it turns on — not a restatement of the point.
+Use GitHub task-list syntax exactly as shown. Necessary-now and worth-keeping points start open because each still requires an action; dropped points start checked because their disposal is complete. Write `None.` under an empty bucket instead of inventing a task.
 
-The closing line says whether the pull request is blocked and by which numbers, or that nothing blocks it and what remains to be filed. Post the ledger and stop; the follow-up issues are the human's to file.
+One brief sentence per point. The explanation says why the disposal is right, citing the file, the issue's wording, or the standard it turns on — not a restatement of the point. For worth-keeping points, name what should be filed so the open task can be completed by a triage agent.
+
+The task lists are the status ledger: an implementation agent closes necessary-now items as their changes land, and a triage agent closes worth-keeping items as their follow-up is captured. The state-based closing line remains true as those agents check off work; do not duplicate item numbers in a static verdict that will go stale. Post the ledger and stop; completing its open tasks belongs to those later actors.
 
 ## When you saw something yourself
 
-Rule the review first and completely. If the diff also carries something blocking that the reviewer missed, add it under an `Also necessary now:` heading below the ledger, unnumbered, so the ledger stays one line per reviewer point. Hold this to what genuinely blocks the merge — a second review dressed as an addendum defeats the reason a third party reads the list.
+Rule the review first and completely. If the diff also carries something blocking that the reviewer missed, add `- [ ] Judge: <brief explanation>` after the numbered points in Necessary now. `Judge:` distinguishes it from the reviewer's numbering while keeping every blocking action in the same queue. Hold this to what genuinely blocks the merge — a second review dressed as an addendum defeats the reason a third party reads the list.
 
 ## When the issue is the problem
 
