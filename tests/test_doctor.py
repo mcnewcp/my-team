@@ -14,12 +14,13 @@ from typing import Any
 import pytest
 
 from findings import checks, find, status_of
-from my_team.core.config import Config, RoleConfig, Roles
+from my_team.core.config import ROLE_NAMES, ROLE_PERMISSIONS, Config, RoleConfig, Roles
 from my_team.core.doctor import (
     Facts,
     Finding,
     GhFacts,
     HarnessFacts,
+    InstallationFacts,
     ProductOwnerFacts,
     Protection,
     RepoFacts,
@@ -35,34 +36,58 @@ from my_team.core.labels import AUTHORIZATION_LABEL, ESCALATION_LABEL
 
 LABELS = (AUTHORIZATION_LABEL, ESCALATION_LABEL, "bug")
 
-ROLE = RoleConfig(
-    app_id=4652114,
-    bot_user_id=318751706,
-    installation_id=155006997,
-    key_path=Path("~/.config/my-team/keys/implementer.pem"),
-)
+# The three provisioned Apps. Distinct in every id, because that is what the roster is:
+# a role sharing an App with another cannot both open a pull request and approve it.
+ROLES = {
+    "implementer": RoleConfig(
+        app_id=4652114,
+        bot_user_id=318751706,
+        installation_id=155006997,
+        key_path=Path("~/.config/my-team/keys/implementer.pem"),
+    ),
+    "reviewer": RoleConfig(
+        app_id=4608397,
+        bot_user_id=317436782,
+        installation_id=154043927,
+        key_path=Path("~/.config/my-team/keys/reviewer.pem"),
+    ),
+    "judge": RoleConfig(
+        app_id=4652145,
+        bot_user_id=318752691,
+        installation_id=155007556,
+        key_path=Path("~/.config/my-team/keys/judge.pem"),
+    ),
+}
+ROLE = ROLES["implementer"]
 
 
 def a_config(**overrides: Any) -> Config:
     values: dict[str, Any] = {
         "product_owner": "mcnewcp",
         "required_checks": ("lint", "types", "tests"),
-        "roles": Roles(implementer=ROLE, reviewer=ROLE, judge=ROLE),
+        "roles": Roles(**ROLES),
     }
     values.update(overrides)
     return Config(**values)
 
 
-def a_role(**overrides: Any) -> RoleFacts:
+def an_installation(name: str = "implementer", **overrides: Any) -> InstallationFacts:
+    values: dict[str, Any] = {"suspended": False, "permissions": dict(ROLE_PERMISSIONS[name])}
+    values.update(overrides)
+    return InstallationFacts(**values)
+
+
+def a_role(name: str = "implementer", **overrides: Any) -> RoleFacts:
+    declared = ROLES[name]
     values: dict[str, Any] = {
-        "declared": ROLE,
-        "key_path": Path("/home/mcnewcp/.config/my-team/keys/implementer.pem"),
+        "declared": declared,
+        "key_path": Path(f"/home/mcnewcp/.config/my-team/keys/{name}.pem"),
         "key_mode": 0o600,
         "key_inside_repo": False,
-        "app_slug": "implementer-my-team",
-        "installation_resolved": True,
+        "app_slug": f"{name}-my-team",
+        "installation": an_installation(name),
         "installation_reaches_repo": True,
-        "bot_user_id": 318751706,
+        "bot_user_id": declared.bot_user_id,
     }
     values.update(overrides)
     return RoleFacts(**values)
@@ -91,7 +116,7 @@ def healthy(**overrides: Any) -> Facts:
         "product_owner": ProductOwnerFacts(login="mcnewcp", permission="admin"),
         "repo": a_repo(),
         "protection": Unprotected(branch="main"),
-        "roles": {"implementer": a_role(), "reviewer": a_role(), "judge": a_role()},
+        "roles": {name: a_role(name) for name in ROLE_NAMES},
     }
     values.update(overrides)
     return Facts(**values)
@@ -117,6 +142,7 @@ def test_the_checks_are_reported_in_the_order_the_spec_lists_them() -> None:
         "role implementer",
         "role reviewer",
         "role judge",
+        "role identities",
         "merge policy",
         "labels",
         "protection",
@@ -176,6 +202,17 @@ def test_gh_present_but_unauthenticated_fails() -> None:
 
     assert finding.status is Status.FAIL
     assert "gh auth status" in finding.detail
+
+
+def test_gh_that_could_not_be_asked_reports_what_it_said_rather_than_no_account() -> None:
+    # A timed-out `gh` and a logged-out `gh` are two conditions with two fixes, and only
+    # one of them is answered by `gh auth login`.
+    facts = healthy(gh=GhFacts(path="/usr/bin/gh", account=Unavailable("timed out after 30s")))
+    finding = find(facts, "gh")
+
+    assert finding.status is Status.FAIL
+    assert "timed out after 30s" in finding.detail
+    assert "reported no account" not in finding.detail
 
 
 def test_gh_authenticated_names_the_account() -> None:
@@ -255,13 +292,14 @@ def test_a_product_owner_that_could_not_be_resolved_fails() -> None:
 
 
 def with_role(name: str, facts: RoleFacts | Unavailable) -> Facts:
-    roles: dict[str, RoleFacts | Unavailable] = {
-        "implementer": a_role(),
-        "reviewer": a_role(),
-        "judge": a_role(),
-    }
+    roles: dict[str, RoleFacts | Unavailable] = {n: a_role(n) for n in ROLE_NAMES}
     roles[name] = facts
     return healthy(roles=roles)
+
+
+def broken(name: str, **overrides: Any) -> Facts:
+    """A sound roster with exactly one thing wrong with `name`."""
+    return with_role(name, a_role(name, **overrides))
 
 
 def test_a_sound_role_reports_the_three_ids_config_keys_on() -> None:
@@ -274,15 +312,15 @@ def test_a_sound_role_reports_the_three_ids_config_keys_on() -> None:
 
 
 def test_a_missing_key_file_fails_and_names_the_path() -> None:
-    finding = find(with_role("judge", a_role(key_mode=None)), "role judge")
+    finding = find(broken("judge", key_mode=None), "role judge")
 
     assert finding.status is Status.FAIL
-    assert "/home/mcnewcp/.config/my-team/keys/implementer.pem" in finding.detail
+    assert "/home/mcnewcp/.config/my-team/keys/judge.pem" in finding.detail
 
 
 @pytest.mark.parametrize("mode", [0o644, 0o400, 0o777, 0o660])
 def test_a_key_that_is_not_0600_fails_and_names_the_mode(mode: int) -> None:
-    finding = find(with_role("reviewer", a_role(key_mode=mode)), "role reviewer")
+    finding = find(broken("reviewer", key_mode=mode), "role reviewer")
 
     assert finding.status is Status.FAIL
     assert f"{mode:04o}" in finding.detail
@@ -291,30 +329,30 @@ def test_a_key_that_is_not_0600_fails_and_names_the_mode(mode: int) -> None:
 def test_a_key_inside_the_target_repo_fails_even_at_0600() -> None:
     # A key inside the repo is one `git add .` from being published, which no file mode
     # prevents, so it is reported ahead of the mode.
-    finding = find(with_role("judge", a_role(key_inside_repo=True)), "role judge")
+    finding = find(broken("judge", key_inside_repo=True), "role judge")
 
     assert finding.status is Status.FAIL
     assert "outside every repo" in finding.detail
 
 
 def test_a_key_that_does_not_authenticate_as_its_app_fails() -> None:
-    finding = find(with_role("judge", a_role(app_slug=None)), "role judge")
+    finding = find(broken("judge", app_slug=None), "role judge")
 
     assert finding.status is Status.FAIL
-    assert "4652114" in finding.detail
+    assert "4652145" in finding.detail
 
 
 def test_an_installation_that_does_not_resolve_fails() -> None:
-    finding = find(with_role("judge", a_role(installation_resolved=False)), "role judge")
+    finding = find(broken("judge", installation=None), "role judge")
 
     assert finding.status is Status.FAIL
-    assert "155006997" in finding.detail
+    assert "155007556" in finding.detail
 
 
 def test_an_installation_that_does_not_cover_this_repo_fails() -> None:
     # It resolves — the App exists and the key signs for it — and the role would still
     # fail its first write, which is exactly what `doctor` is for.
-    finding = find(with_role("judge", a_role(installation_reaches_repo=False)), "role judge")
+    finding = find(broken("judge", installation_reaches_repo=False), "role judge")
 
     assert finding.status is Status.FAIL
     assert "does not cover this repo" in finding.detail
@@ -323,21 +361,21 @@ def test_an_installation_that_does_not_cover_this_repo_fails() -> None:
 def test_a_role_is_still_checkable_when_the_repo_could_not_be_named() -> None:
     # Everything else about a role is provable with its own key alone, so gh being the
     # thing at fault must not take the key checks down with it.
-    facts = with_role("judge", a_role(installation_reaches_repo=None))
+    facts = broken("judge", installation_reaches_repo=None)
 
     assert status_of(facts, "role judge") is Status.PASS
 
 
 def test_a_bot_user_id_that_disagrees_with_the_api_fails_naming_both() -> None:
-    finding = find(with_role("judge", a_role(bot_user_id=999)), "role judge")
+    finding = find(broken("judge", bot_user_id=999), "role judge")
 
     assert finding.status is Status.FAIL
-    assert "318751706" in finding.detail
+    assert "318752691" in finding.detail
     assert "999" in finding.detail
 
 
 def test_a_bot_user_that_does_not_resolve_leaves_the_id_unconfirmed() -> None:
-    finding = find(with_role("judge", a_role(bot_user_id=None)), "role judge")
+    finding = find(broken("judge", bot_user_id=None), "role judge")
 
     assert finding.status is Status.FAIL
     assert "unconfirmed" in finding.detail
@@ -350,11 +388,11 @@ def test_a_coverage_check_that_could_not_run_gets_its_own_advisory_line() -> Non
     cannot be a warning on the line that can. It gets its own name, and the blocking line
     goes on saying that everything §1 does ask for was proven.
     """
-    facts = with_role("judge", a_role(installation_reaches_repo=Unavailable("connection reset")))
+    facts = broken("judge", installation_reaches_repo=Unavailable("connection reset"))
     identity, coverage = find(facts, "role judge"), find(facts, "role judge coverage")
 
     assert identity.status is Status.PASS
-    assert "318751706" in identity.detail, "the required checks all passed and still say so"
+    assert "318752691" in identity.detail, "the required checks all passed and still say so"
     assert coverage.severity is Severity.ADVISORY
     assert coverage.status is Status.WARN
     assert "could not be checked" in coverage.detail
@@ -366,7 +404,7 @@ def test_a_coverage_check_that_could_not_run_gets_its_own_advisory_line() -> Non
 def test_a_coverage_check_that_answered_adds_no_line_of_its_own(reaches: bool | None) -> None:
     # `True` needs no saying, `False` is already on the blocking line, and `None` means
     # `gh` could not name the repo — which is `gh`'s own failing check, not this one's.
-    facts = with_role("judge", a_role(installation_reaches_repo=reaches))
+    facts = broken("judge", installation_reaches_repo=reaches)
 
     assert "role judge coverage" not in checks(facts)
 
@@ -374,14 +412,12 @@ def test_a_coverage_check_that_answered_adds_no_line_of_its_own(reaches: bool | 
 def test_a_bot_id_that_was_never_looked_up_names_the_prerequisite_and_not_the_bot() -> None:
     # `/users/...` is looked up as the human, so `gh` failing is `gh`'s finding. Saying
     # the bot "did not resolve" puts three misleading lines under the one true one.
-    facts = with_role(
-        "judge", a_role(bot_user_id=Unavailable("`gh` could not identify an account"))
-    )
+    facts = broken("judge", bot_user_id=Unavailable("`gh` is not on PATH"))
     finding = find(facts, "role judge")
 
     assert finding.status is Status.FAIL
     assert "did not resolve" not in finding.detail
-    assert "could not identify an account" in finding.detail
+    assert "not on PATH" in finding.detail
 
 
 def test_a_role_that_could_not_be_probed_fails_with_the_reason() -> None:
@@ -394,12 +430,172 @@ def test_a_role_that_could_not_be_probed_fails_with_the_reason() -> None:
 def test_every_role_in_the_roster_gets_a_line_even_when_none_were_probed() -> None:
     diagnosis = evaluate(healthy(roles={}))
 
-    assert [f.check for f in diagnosis.findings if f.check.startswith("role ")] == [
-        "role implementer",
-        "role reviewer",
+    named = [f for f in diagnosis.findings if f.check.removeprefix("role ") in ROLE_NAMES]
+
+    assert [f.check for f in named] == ["role implementer", "role reviewer", "role judge"]
+    assert all(f.status is Status.FAIL for f in named)
+
+
+def test_a_suspended_installation_fails_even_though_it_resolves() -> None:
+    # GitHub suspends an installation without removing it: every id still resolves, and
+    # the role is granted nothing until a human unsuspends it.
+    finding = find(
+        broken("judge", installation=an_installation("judge", suspended=True)), "role judge"
+    )
+
+    assert finding.status is Status.FAIL
+    assert "suspended" in finding.detail
+
+
+@pytest.mark.parametrize(
+    ("name", "granted", "named"),
+    [
+        # Missing authority: the role cannot do its job.
+        ("implementer", {"contents": "read"}, "contents"),
+        ("judge", {"issues": "read"}, "issues"),
+        # Authority it must not hold: the matrix is two prohibitions as well as a grant.
+        ("reviewer", {"contents": "write"}, "contents"),
+        ("implementer", {"issues": "write"}, "issues"),
+    ],
+)
+def test_an_installation_that_does_not_match_the_role_s_authority_fails(
+    name: str, granted: Mapping[str, str], named: str
+) -> None:
+    permissions = {**ROLE_PERMISSIONS[name], **granted}
+    finding = find(
+        broken(name, installation=an_installation(name, permissions=permissions)), f"role {name}"
+    )
+
+    assert finding.status is Status.FAIL
+    assert named in finding.detail
+    assert granted[named] in finding.detail
+
+
+def test_an_installation_missing_a_permission_outright_says_no_access() -> None:
+    permissions = {k: v for k, v in ROLE_PERMISSIONS["judge"].items() if k != "issues"}
+    finding = find(
+        broken("judge", installation=an_installation("judge", permissions=permissions)),
         "role judge",
-    ]
-    assert all(f.status is Status.FAIL for f in diagnosis.findings if f.check.startswith("role "))
+    )
+
+    assert finding.status is Status.FAIL
+    assert "issues no access" in finding.detail
+
+
+def test_a_grant_that_could_not_be_read_warns_on_its_own_line_and_never_blocks() -> None:
+    """What an installation grants is a check §1 does not enumerate.
+
+    Severity is fixed per check and never per outcome, so the question that cannot block
+    gets its own name — and the blocking line goes on saying that everything §1 does ask
+    for was proven.
+    """
+    unreadable = an_installation("judge", permissions=Unavailable("described unrecognisably"))
+    facts = broken("judge", installation=unreadable)
+    identity, authority = find(facts, "role judge"), find(facts, "role judge authority")
+
+    assert identity.status is Status.PASS
+    assert "318752691" in identity.detail, "the required checks all passed and still say so"
+    assert authority.severity is Severity.ADVISORY
+    assert authority.status is Status.WARN
+    assert "could not be read" in authority.detail
+    assert evaluate(facts).ok
+
+
+def test_a_grant_that_was_read_adds_no_line_of_its_own() -> None:
+    assert "role judge authority" not in checks(healthy())
+
+
+def test_a_permission_the_matrix_does_not_name_is_not_judged() -> None:
+    # GitHub grants every App `metadata` by itself, so a matrix read as an exhaustive
+    # list would fail every correctly provisioned role.
+    permissions = {**ROLE_PERMISSIONS["reviewer"], "metadata": "read"}
+
+    assert (
+        status_of(
+            broken("reviewer", installation=an_installation("reviewer", permissions=permissions)),
+            "role reviewer",
+        )
+        is Status.PASS
+    )
+
+
+def test_the_authority_matrix_covers_the_whole_roster() -> None:
+    # A fourth role added to `Roles` without a row here would be checked against a
+    # `KeyError` rather than against the spec's table.
+    assert tuple(ROLE_PERMISSIONS) == ROLE_NAMES
+
+
+@pytest.mark.parametrize(
+    "addition",
+    [
+        {"installation_reaches_repo": False},
+        {"installation": an_installation("judge", suspended=True)},
+    ],
+)
+def test_a_check_the_spec_does_not_enumerate_never_reports_in_place_of_one_it_does(
+    addition: Mapping[str, Any],
+) -> None:
+    """The one ordering rule inside a role's line.
+
+    Coverage, suspension and the authority matrix are this design's own additions. A
+    role whose `bot_user_id` disagrees with the API has failed a check §1 names, and
+    reporting an addition instead would name a condition the spec never asked about
+    while the required one went unmentioned.
+    """
+    finding = find(broken("judge", bot_user_id=999, **addition), "role judge")
+
+    assert "318752691" in finding.detail
+    assert "999" in finding.detail
+
+
+# ── One identity per role ────────────────────────────────────────────────────────
+
+
+def sharing(name: str, **overrides: Any) -> Facts:
+    """A roster where `name` declares somebody else's ids."""
+    declared = ROLES["implementer"]
+    values: dict[str, Any] = {
+        "app_id": declared.app_id,
+        "bot_user_id": declared.bot_user_id,
+        "installation_id": ROLES[name].installation_id,
+        "key_path": ROLES[name].key_path,
+    }
+    values.update(overrides)
+    roles = {**ROLES, name: RoleConfig(**values)}
+    return healthy(config=a_config(roles=Roles(**roles)))
+
+
+def test_three_distinct_identities_pass() -> None:
+    finding = find(healthy(), "role identities")
+
+    assert finding.status is Status.PASS
+    assert finding.severity is Severity.BLOCKING
+
+
+def test_two_roles_sharing_one_app_cannot_both_open_and_approve() -> None:
+    # Platform-enforced rather than orchestrator-policed: the App is refused with a
+    # `422` and no review is recorded, at the end of a round rather than before one.
+    finding = find(sharing("judge"), "role identities")
+
+    assert finding.status is Status.FAIL
+    assert "app_id 4652114" in finding.detail
+    assert "implementer" in finding.detail and "judge" in finding.detail
+
+
+def test_two_roles_sharing_one_bot_user_fail_on_that_alone() -> None:
+    # A bot user id is what a review is matched on, so two roles behind one of them are
+    # indistinguishable to the state machine even with two Apps.
+    finding = find(sharing("reviewer", app_id=4608397), "role identities")
+
+    assert finding.status is Status.FAIL
+    assert "bot_user_id 318751706" in finding.detail
+    assert "app_id" not in finding.detail
+
+
+def test_the_roster_check_is_dropped_when_the_config_did_not_parse() -> None:
+    # There are no ids to compare in a file that would not load, and the config failure
+    # above already says so.
+    assert "role identities" not in checks(healthy(config=Unavailable("no config file")))
 
 
 # ── Merge policy and labels ──────────────────────────────────────────────────────

@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from my_team.core.config import KEY_MODE, parse_config
+from my_team.core.config import KEY_MODE, ROLE_NAMES, ROLE_PERMISSIONS, parse_config
 from my_team.credentials import key_mode
 
 WIZARD = Path(__file__).resolve().parents[1] / "scripts" / "register-role-app.sh"
@@ -31,18 +31,20 @@ RECORDED = {
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="the wizard is bash")
 
 
-def run_wizard(home: Path, script: str) -> subprocess.CompletedProcess[str]:
+def run_wizard(
+    home: Path, script: str, *, path: str = "/usr/bin:/bin"
+) -> subprocess.CompletedProcess[str]:
     """Source the wizard for its functions alone, then run `script` against them."""
     return subprocess.run(
         ["bash", "-c", f"source {WIZARD}\n{script}"],
         capture_output=True,
         text=True,
-        env={"HOME": str(home), "MT_WIZARD_LIB": "1", "PATH": "/usr/bin:/bin"},
+        env={"HOME": str(home), "MT_WIZARD_LIB": "1", "PATH": path},
     )
 
 
-def wizard(home: Path, script: str) -> str:
-    result = run_wizard(home, script)
+def wizard(home: Path, script: str, *, path: str = "/usr/bin:/bin") -> str:
+    result = run_wizard(home, script, path=path)
     assert result.returncode == 0, result.stderr
     return result.stdout
 
@@ -160,6 +162,113 @@ def test_a_directory_at_0600_is_not_a_role_key(tmp_path: Path) -> None:
 
 def test_a_path_with_nothing_at_it_is_not_a_role_key(tmp_path: Path) -> None:
     assert not succeeds(tmp_path, f"key_is_a_role_key {tmp_path}/absent.pem")
+
+
+# ── The authority a role is fixed to ─────────────────────────────────────────────
+
+
+def granted(emitted: str) -> dict[str, str]:
+    """`<permission>=<level>` lines back as a mapping."""
+    return dict(line.split("=", 1) for line in emitted.splitlines() if line)
+
+
+@pytest.mark.parametrize("role", ROLE_NAMES)
+def test_the_wizard_and_the_loop_agree_about_what_a_role_may_do(tmp_path: Path, role: str) -> None:
+    # Two copies of §5's matrix, one in bash and one in Python, and no import between
+    # them: the wizard tells a human what to click and `doctor` blocks on what GitHub
+    # then reports. They drift silently, and the drift is a role certified as sound by
+    # the wizard and refused by the loop it was provisioned for.
+    assert granted(wizard(tmp_path, f"role_permissions {role}")) == ROLE_PERMISSIONS[role]
+
+
+def test_the_form_labels_are_derived_from_the_matrix_rather_than_restated(
+    tmp_path: Path,
+) -> None:
+    labelled = wizard(tmp_path, "permission_label pull_requests write; printf '\\n'")
+
+    assert "Pull requests" in labelled
+    assert "Read and write" in labelled
+
+
+def test_an_installation_that_matches_the_matrix_has_no_problems(tmp_path: Path) -> None:
+    granted_lines = "contents=read\npull_requests=write\nissues=read"
+
+    assert wizard(tmp_path, f"permission_problems reviewer '{granted_lines}'") == ""
+
+
+def test_a_permission_the_matrix_does_not_name_is_not_judged(tmp_path: Path) -> None:
+    # GitHub grants every App `metadata` by itself, so a matrix read as an exhaustive
+    # list would reject every correctly provisioned role.
+    granted_lines = "contents=read\npull_requests=write\nissues=read\nmetadata=read"
+
+    assert wizard(tmp_path, f"permission_problems reviewer '{granted_lines}'") == ""
+
+
+@pytest.mark.parametrize(
+    ("role", "granted_lines", "named"),
+    [
+        # Authority it must not hold — the matrix is two prohibitions as much as a grant.
+        ("reviewer", "contents=write\npull_requests=write\nissues=read", "contents is write"),
+        ("implementer", "contents=write\npull_requests=write\nissues=write", "issues is write"),
+        # Authority it needs and was not given.
+        ("judge", "contents=write\npull_requests=write\nissues=read", "issues is read"),
+        ("implementer", "pull_requests=write\nissues=read", "contents is no access"),
+    ],
+)
+def test_an_installation_that_does_not_match_the_matrix_names_what_is_wrong(
+    tmp_path: Path, role: str, granted_lines: str, named: str
+) -> None:
+    assert named in wizard(tmp_path, f"permission_problems {role} '{granted_lines}'")
+
+
+# ── Which repositories the installation reaches ──────────────────────────────────
+
+FAKE_GH = """#!/bin/sh
+# Stands in for `gh api`: the endpoint answers 30 repositories at a time and hands over
+# the rest only when the caller asks for every page. Refuses without a token, so a
+# listing that comes back at all also proves the role's token reached the child.
+[ -n "$GH_TOKEN" ] || exit 1
+last=30
+for argument in "$@"; do [ "$argument" = "--paginate" ] && last=31; done
+number=1
+while [ $number -le $last ]; do echo "mcnewcp/repo$number"; number=$((number + 1)); done
+"""
+
+
+def test_the_repository_listing_asks_for_every_page(tmp_path: Path) -> None:
+    """`/installation/repositories` answers 30 at a time.
+
+    Without `--paginate` a target repo that sorts onto the second page reads as one the
+    installation cannot reach, so the wizard withholds a config block it has earned —
+    and an installation scoped far wider than the target set passes as though narrow.
+    """
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    (binaries / "gh").write_text(FAKE_GH)
+    (binaries / "gh").chmod(0o755)
+
+    listed = wizard(
+        tmp_path, "installation_repos ghs_token", path=f"{binaries}:/usr/bin:/bin"
+    ).splitlines()
+
+    assert "mcnewcp/repo1" in listed, "the token reached `gh`"
+    assert "mcnewcp/repo31" in listed, "and the page after the first was asked for"
+
+
+def test_a_listing_that_failed_is_not_an_installation_that_reaches_nothing(
+    tmp_path: Path,
+) -> None:
+    # The verify stage reads an empty answer as "the installation does not reach your
+    # target repos" and tells the human to re-scope it. A failed request must not put
+    # that sentence on screen, so the failure travels rather than the emptiness.
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    (binaries / "gh").write_text("#!/bin/sh\nexit 1\n")
+    (binaries / "gh").chmod(0o755)
+
+    failed = run_wizard(tmp_path, "installation_repos ghs_token", path=f"{binaries}:/usr/bin:/bin")
+
+    assert failed.returncode != 0
 
 
 # ── The config blocks, and what has to be true before one is offered ─────────────

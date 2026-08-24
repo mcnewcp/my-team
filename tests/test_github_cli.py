@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from my_team.credentials import TOKEN_VARIABLE
+from my_team.credentials import TOKEN_VARIABLE, InstallationToken
 from my_team.github_cli import GhError, gh_json, run_gh
 
 
@@ -57,7 +57,12 @@ def test_without_a_token_the_child_inherits_the_human_s_own_login(spy: Spy) -> N
 
 
 def test_a_token_reaches_the_child_and_only_the_child(spy: Spy) -> None:
-    run_gh(["pr", "review"], token="ghs_installationtoken")
+    # Handed over as the whole `InstallationToken`: the type keeps its secret out of
+    # representations, and a caller that had to unwrap it first would defeat that
+    # everywhere between the mint and here.
+    minted = InstallationToken(token="ghs_installationtoken", expires_at="2026-08-23T13:00:00Z")
+
+    run_gh(["pr", "review"], token=minted)
 
     environment = spy.calls[0]["env"]
     assert environment[TOKEN_VARIABLE] == "ghs_installationtoken"

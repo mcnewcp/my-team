@@ -32,6 +32,13 @@ def load_config(repo_root: Path) -> Config:
         raise ConfigError(f"{path}: no config file — run `my-team init`") from error
     except tomllib.TOMLDecodeError as error:
         raise ConfigError(f"{path}: malformed TOML — {error}") from error
+    except (OSError, UnicodeDecodeError) as error:
+        # A file that will not open and bytes that will not decode are the same finding
+        # to a caller: the config could not be read. `doctor` blocks on this file
+        # parsing, and a blocking check that raises through is a traceback where a named
+        # precondition belongs. TOML is UTF-8 by definition, so the decode happens here
+        # rather than in the parser and its failure is this module's to name.
+        raise ConfigError(f"{path}: could not be read — {error}") from error
 
     try:
         return parse_config(data)

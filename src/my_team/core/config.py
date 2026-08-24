@@ -108,6 +108,24 @@ class Config:
 ROLE_NAMES: Final = tuple(f.name for f in fields(Roles))
 """The roster, in the order everything that walks it reports — `doctor` included."""
 
+ROLE_PERMISSIONS: Final[Mapping[str, Mapping[str, str]]] = {
+    "implementer": {"contents": "write", "pull_requests": "write", "issues": "read"},
+    "reviewer": {"contents": "read", "pull_requests": "write", "issues": "read"},
+    "judge": {"contents": "write", "pull_requests": "write", "issues": "write"},
+}
+"""§5's authority matrix, spelled the way the installation API reports it.
+
+Part of the contract around a **role** rather than of any one command, which is why it
+sits beside the roster and not in the checker that reads it — `doctor` blocks on it and
+the provisioning wizard tells a human to set it, and those two must not drift.
+
+Matched exactly rather than as a floor, because the matrix is two prohibitions as much
+as it is a grant: the reviewer's Contents *read* is the write-side expression of "the
+reviewer never pushes", and the implementer's Issues *read* of "the implementer never
+files issues". A role wider than its row is one the platform would let past the rule the
+design leans on. The three named here are the three §5 fixes; `metadata`, which GitHub
+grants every App by itself, is not one of them."""
+
 _TOP_LEVEL_KEYS: Final = frozenset(f.name for f in fields(Config))
 _ROLE_KEYS: Final = frozenset(f.name for f in fields(RoleConfig))
 

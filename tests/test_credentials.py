@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import http.client
 import io
 import json
 import urllib.error
@@ -12,11 +13,13 @@ from typing import Any
 
 import pytest
 
+from my_team.core.app_jwt import app_jwt
 from my_team.core.config import KEY_MODE, RoleConfig
 from my_team.credentials import (
     TOKEN_VARIABLE,
     AppApiError,
     CredentialError,
+    InstallationToken,
     app_get,
     app_jwt_for,
     installation_token,
@@ -153,9 +156,15 @@ def test_a_key_that_is_not_text_is_refused_by_name_rather_than_raised_through(
 
 
 def test_the_jwt_is_signed_with_the_key_on_disk(tmp_path: Path, rsa_pem: str) -> None:
-    token = app_jwt_for(role_with_key(a_key(tmp_path, rsa_pem)), now=1_755_000_000)
+    """The file at `key_path` is the one that signs, and nothing else is.
 
-    assert len(token.split(".")) == 3
+    Asserted by signing the same bytes directly: PKCS#1 v1.5 is deterministic, so an
+    identical token is the proof that the key came off disk. What a signature is *worth*
+    is `tests/test_app_jwt.py`'s question, and it asks openssl.
+    """
+    signed = app_jwt_for(role_with_key(a_key(tmp_path, rsa_pem)), now=1_755_000_000)
+
+    assert signed == app_jwt(rsa_pem, app_id=ROLE.app_id, now=1_755_000_000)
 
 
 def test_a_role_whose_key_is_unusable_cannot_mint_a_jwt(tmp_path: Path, rsa_pem: str) -> None:
@@ -250,11 +259,58 @@ def test_a_minted_token_never_appears_in_its_own_representation(
     assert minted.token == "ghs_abc", "redacted from the representation, not from the value"
 
 
+def test_a_successful_response_that_is_not_json_names_the_call_rather_than_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A proxy, a captive portal or a maintenance page all answer 200 with HTML. Letting
+    # the decoder raise turns that into a traceback out of role diagnosis, where what
+    # `doctor` owes the human is one line naming the condition that is unmet.
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *_, **__: Response(b"<html>nope"))
+
+    with pytest.raises(CredentialError, match="/app"):
+        app_get("a.b.c", "/app")
+
+
+def test_a_response_body_that_stops_early_names_the_call_rather_than_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Truncated(Response):
+        def read(self, *_: object) -> bytes:
+            raise http.client.IncompleteRead(b"{")
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *_, **__: Truncated(b""))
+
+    with pytest.raises(CredentialError, match="/app"):
+        app_get("a.b.c", "/app")
+
+
+def test_a_successful_response_that_is_not_an_object_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Every caller reads what comes back by key. A JSON array answers `.get` with an
+    # `AttributeError` several frames later, naming a method rather than a call.
+    monkeypatch.setattr(urllib.request, "urlopen", Api(["implementer-my-team"]))
+
+    with pytest.raises(CredentialError, match="/app"):
+        app_get("a.b.c", "/app")
+
+
+def test_a_token_response_without_a_token_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rsa_pem: str
+) -> None:
+    monkeypatch.setattr(urllib.request, "urlopen", Api({"expires_at": "2026-08-23T13:00:00Z"}))
+
+    with pytest.raises(CredentialError, match="access_tokens"):
+        installation_token(role_with_key(a_key(tmp_path, rsa_pem)), now=1_755_000_000)
+
+
 # ── Where a token may travel ─────────────────────────────────────────────────────
 
 
 def test_a_token_travels_as_gh_token_and_nothing_else() -> None:
-    assert token_env("ghs_abc") == {TOKEN_VARIABLE: "ghs_abc"}
+    minted = InstallationToken(token="ghs_abc", expires_at="2026-08-23T13:00:00Z")
+
+    assert token_env(minted) == {TOKEN_VARIABLE: "ghs_abc"}
 
 
 def test_gh_auth_switch_is_never_called_anywhere() -> None:

@@ -18,11 +18,12 @@ from pathlib import Path
 import pytest
 
 from my_team.cli import ExitCode, main
-from my_team.core.config import KEY_MODE, Config, RoleConfig, Roles
+from my_team.core.config import KEY_MODE, ROLE_NAMES, ROLE_PERMISSIONS, Config, RoleConfig, Roles
 from my_team.core.doctor import (
     Facts,
     GhFacts,
     HarnessFacts,
+    InstallationFacts,
     ProductOwnerFacts,
     RepoFacts,
     RoleFacts,
@@ -169,27 +170,35 @@ def test_doctor_looks_at_the_directory_it_was_run_from(
     assert probe.roots == [Path.cwd()]
 
 
-_ROLE = RoleConfig(
-    app_id=1, bot_user_id=2, installation_id=3, key_path=Path("/keys/implementer.pem")
-)
-_ROLE_FACTS = RoleFacts(
-    declared=_ROLE,
-    key_path=Path("/keys/implementer.pem"),
-    key_mode=KEY_MODE,
-    key_inside_repo=False,
-    app_slug="implementer-my-team",
-    installation_resolved=True,
-    installation_reaches_repo=True,
-    bot_user_id=2,
-)
+def _role(name: str, app_id: int) -> RoleConfig:
+    # Distinct ids per role: one identity may not both open a pull request and approve
+    # it, and `doctor` blocks a roster that shares one.
+    return RoleConfig(
+        app_id=app_id,
+        bot_user_id=app_id + 1,
+        installation_id=app_id + 2,
+        key_path=Path(f"/keys/{name}.pem"),
+    )
+
+
+def _role_facts(name: str, declared: RoleConfig) -> RoleFacts:
+    return RoleFacts(
+        declared=declared,
+        key_path=declared.key_path,
+        key_mode=KEY_MODE,
+        key_inside_repo=False,
+        app_slug=f"{name}-my-team",
+        installation=InstallationFacts(suspended=False, permissions=ROLE_PERMISSIONS[name]),
+        installation_reaches_repo=True,
+        bot_user_id=declared.bot_user_id,
+    )
+
+
+_ROLES = {name: _role(name, 10 * index + 1) for index, name in enumerate(ROLE_NAMES)}
 SOUND = Facts(
     gh=GhFacts(path="/usr/bin/gh", account="mcnewcp"),
     harness=HarnessFacts(binary="claude", path="/usr/bin/claude"),
-    config=Config(
-        product_owner="mcnewcp",
-        required_checks=("lint",),
-        roles=Roles(implementer=_ROLE, reviewer=_ROLE, judge=_ROLE),
-    ),
+    config=Config(product_owner="mcnewcp", required_checks=("lint",), roles=Roles(**_ROLES)),
     product_owner=ProductOwnerFacts(login="mcnewcp", permission="admin"),
     repo=RepoFacts(
         name_with_owner="mcnewcp/my-team",
@@ -201,5 +210,5 @@ SOUND = Facts(
         labels=(AUTHORIZATION_LABEL, ESCALATION_LABEL),
     ),
     protection=Unprotected(branch="main"),
-    roles=dict.fromkeys(("implementer", "reviewer", "judge"), _ROLE_FACTS),
+    roles={name: _role_facts(name, declared) for name, declared in _ROLES.items()},
 )

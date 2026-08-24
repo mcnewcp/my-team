@@ -23,6 +23,7 @@ from collections.abc import Mapping
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Final
+from urllib.parse import quote
 
 from my_team.config_file import load_config
 from my_team.core.app_jwt import PrivateKeyError
@@ -31,6 +32,7 @@ from my_team.core.doctor import (
     Facts,
     GhFacts,
     HarnessFacts,
+    InstallationFacts,
     ProductOwnerFacts,
     Protection,
     RepoFacts,
@@ -56,9 +58,10 @@ rather than a config key; the seam takes ownership of it when a second one arriv
 def probe(repo_root: Path, *, now: int) -> Facts:
     """Read every precondition `doctor` reports on. Writes nothing, anywhere."""
     gh = _gh()
-    # Who `gh` is logged in as, or nobody. Missing and unauthenticated are one answer to
-    # everything below, so they become one here rather than at each place that asks.
-    account = None if isinstance(gh, Unavailable) else gh.account
+    # Who `gh` is logged in as, or why nobody is. Missing, unauthenticated and unreachable
+    # block everything below alike, so they become one value here rather than at each
+    # place that asks — one that still says which of the three it was.
+    account = _account(gh)
     config = _config(repo_root)
     repository = _repository(account, repo_root)
     repo = _repo(repository, repo_root)
@@ -79,9 +82,23 @@ def _gh() -> GhFacts | Unavailable:
         return Unavailable(f"`{GH}` is not on PATH — see cli.github.com")
     try:
         account = run_gh(["api", "user", "--jq", ".login"]).strip()
-    except GhError:
-        return GhFacts(path=path, account=None)
+    except GhError as error:
+        # `gh` ran and did not answer. A timeout, a `502` and an expired token are three
+        # conditions and one of them is "log in again", so the reason travels rather
+        # than collapsing into the logged-in-as-nobody line below.
+        return GhFacts(path=path, account=Unavailable(error.reason))
     return GhFacts(path=path, account=account or None)
+
+
+def _account(gh: GhFacts | Unavailable) -> str | Unavailable:
+    """The human's login, or the one reason everything needing it goes unchecked."""
+    if isinstance(gh, Unavailable):
+        return gh
+    if isinstance(gh.account, Unavailable):
+        return gh.account
+    if gh.account is None:
+        return Unavailable(f"`{GH}` reported no account")
+    return gh.account
 
 
 def _harness() -> HarnessFacts | Unavailable:
@@ -98,10 +115,10 @@ def _config(repo_root: Path) -> Config | Unavailable:
         return Unavailable(str(error))
 
 
-def _repository(account: str | None, repo_root: Path) -> str | Unavailable:
+def _repository(account: str | Unavailable, repo_root: Path) -> str | Unavailable:
     """`owner/repo`, which everything below needs and nothing else supplies."""
-    if account is None:
-        return Unavailable("not checked — `gh` could not identify an account")
+    if isinstance(account, Unavailable):
+        return Unavailable(f"not checked — {account.reason}")
     try:
         name = run_gh(
             ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], cwd=repo_root
@@ -189,15 +206,22 @@ def _protection(
     if isinstance(repo, Unavailable):
         return repo
     branch = repo.default_branch
+    # One path segment, percent-encoded. A branch may legally be called `release#1`, and
+    # interpolated raw the `#` starts a URL fragment — so the request asks about
+    # `release`, GitHub answers about a different branch, and the report is confidently
+    # wrong. Encoding the `/` in `release/1.0` too is measured rather than assumed:
+    # `gh api repos/cli/cli/branches/af%2F12325-pr-view-project-null` and the same path
+    # with a raw `/` return the same branch, so one segment is safe for both shapes.
+    ref = quote(branch, safe="")
     try:
         protected = run_gh(
-            ["api", f"repos/{repo.name_with_owner}/branches/{branch}", "--jq", ".protected"],
+            ["api", f"repos/{repo.name_with_owner}/branches/{ref}", "--jq", ".protected"],
             cwd=repo_root,
         ).strip()
         if protected != "true":
             return Unprotected(branch=branch)
         data = gh_json(
-            ["api", f"repos/{repo.name_with_owner}/branches/{branch}/protection"], cwd=repo_root
+            ["api", f"repos/{repo.name_with_owner}/branches/{ref}/protection"], cwd=repo_root
         )
     except GhError as error:
         return Unavailable(error.reason)
@@ -219,7 +243,7 @@ def _protection_of(branch: str, data: Any) -> Protection | Unavailable:
 
 def _roles(
     config: Config | Unavailable,
-    account: str | None,
+    account: str | Unavailable,
     repository: str | Unavailable,
     repo_root: Path,
     *,
@@ -236,7 +260,7 @@ def _roles(
 
 def _role(
     role: RoleConfig,
-    account: str | None,
+    account: str | Unavailable,
     repository: str | None,
     repo_root: Path,
     *,
@@ -249,7 +273,7 @@ def _role(
     def found(
         *,
         app_slug: str | None = None,
-        installation_resolved: bool = False,
+        installation: InstallationFacts | None = None,
         installation_reaches_repo: bool | Unavailable | None = None,
         bot_user_id: int | Unavailable | None = None,
     ) -> RoleFacts:
@@ -260,7 +284,7 @@ def _role(
             key_mode=mode,
             key_inside_repo=inside,
             app_slug=app_slug,
-            installation_resolved=installation_resolved,
+            installation=installation,
             installation_reaches_repo=installation_reaches_repo,
             bot_user_id=bot_user_id,
         )
@@ -290,23 +314,46 @@ def _role(
         return Unavailable(f"{role.app_id}: GitHub described the App without a slug")
 
     try:
-        app_get(jwt, f"/app/installations/{role.installation_id}")
+        described = app_get(jwt, f"/app/installations/{role.installation_id}")
     except AppApiError as error:
         if error.status != HTTPStatus.NOT_FOUND:
             return Unavailable(str(error))
         return found(app_slug=slug)
     except CredentialError as error:
         return Unavailable(str(error))
-
     # Two last questions, asked of two different services and reported apart. Coverage
-    # is the one check here §1 does not enumerate and the bot id is one it requires, so
-    # letting either return early for the other put an addition in front of a
-    # requirement — and made a transient failure read as an unexamined role.
+    # is a check §1 does not enumerate and the bot id is one it requires, so letting
+    # either return early for the other put an addition in front of a requirement — and
+    # made a transient failure read as an unexamined role.
     return found(
         app_slug=slug,
-        installation_resolved=True,
+        installation=_installation(described, role),
         installation_reaches_repo=_reaches(jwt, repository, role),
         bot_user_id=_bot_user(account, slug),
+    )
+
+
+def _installation(described: Mapping[str, Any], role: RoleConfig) -> InstallationFacts:
+    """What the installation grants, out of the response that proved it resolves.
+
+    An installation that resolves is not yet one a role can act with: GitHub suspends an
+    installation without removing it, and the permissions it was accepted with are the
+    ones it actually has — not the ones the App now asks for. Both arrive in this
+    response, so neither costs a request.
+
+    A grant that cannot be read goes into `permissions` rather than being returned in
+    place of the whole role. What an installation grants is one of the checks §1 does
+    not enumerate, and returning `Unavailable` here left a role whose key, App and bot
+    id were all provable reported as if none of them had been looked at.
+    """
+    granted = described.get("permissions")
+    permissions: Mapping[str, str] | Unavailable = Unavailable(
+        f"GitHub described installation {role.installation_id} unrecognisably"
+    )
+    if isinstance(granted, dict) and all(isinstance(level, str) for level in granted.values()):
+        permissions = granted
+    return InstallationFacts(
+        suspended=described.get("suspended_at") is not None, permissions=permissions
     )
 
 
@@ -324,18 +371,20 @@ def _reaches(jwt: str, repository: str | None, role: RoleConfig) -> bool | Unava
     if repository is None:
         return None
     try:
-        return bool(
-            app_get(jwt, f"/repos/{repository}/installation").get("id") == role.installation_id
-        )
+        covering = app_get(jwt, f"/repos/{repository}/installation").get("id")
     except AppApiError as error:
         if error.status == HTTPStatus.NOT_FOUND:
             return False
         return Unavailable(str(error))
     except CredentialError as error:
         return Unavailable(str(error))
+    if not isinstance(covering, int):
+        # A definite *no* blocks a run, so it is claimed only on an answer that says so.
+        return Unavailable(f"{repository}: GitHub named its installation without an id")
+    return covering == role.installation_id
 
 
-def _bot_user(account: str | None, slug: str) -> int | Unavailable | None:
+def _bot_user(account: str | Unavailable, slug: str) -> int | Unavailable | None:
     """The numeric id reviews are matched on, which is not derivable from `app_id`.
 
     Looked up as the human: `/users/...` is not an endpoint an App JWT may reach — so
@@ -344,9 +393,15 @@ def _bot_user(account: str | None, slug: str) -> int | Unavailable | None:
     was one login. The slug is percent-encoded because the account really is called
     `<slug>[bot]`.
     """
-    if account is None:
-        return Unavailable(f"`{GH}` could not identify an account")
+    if isinstance(account, Unavailable):
+        return account
     try:
         return int(run_gh(["api", f"/users/{slug}%5Bbot%5D", "--jq", ".id"]).strip())
-    except (GhError, ValueError):
+    except GhError as error:
+        # The lookup itself failed. Which is a fact about `gh` or about GitHub, never
+        # about a bot account nobody managed to ask after — so it is reported as one.
+        return Unavailable(error.reason)
+    except ValueError:
+        # `gh` succeeded and printed something that is not a number, which is the one
+        # answer that really is about the account: there is no id under that login.
         return None

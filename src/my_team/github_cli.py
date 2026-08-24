@@ -29,7 +29,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
-from my_team.credentials import token_env
+from my_team.credentials import InstallationToken, token_env
 
 GH: Final = "gh"
 
@@ -51,14 +51,16 @@ def run_gh(
     args: Sequence[str],
     *,
     cwd: Path | None = None,
-    token: str | None = None,
+    token: InstallationToken | None = None,
     timeout: float = GH_TIMEOUT_SECONDS,
 ) -> str:
     """Run `gh` and return its stdout, or raise `GhError`.
 
-    `token` makes the call as a role rather than as the human. It reaches the child
-    through `env` alone — the parent's own environment is never touched, so two ticks
-    running as different roles cannot see each other's credential.
+    `token` makes the call as a role rather than as the human. It arrives as the whole
+    `InstallationToken` and is unwrapped only where the child's environment is built,
+    so the secret is never a bare string in a frame that could print one. It reaches the
+    child through `env` alone — the parent's own environment is never touched, so two
+    ticks running as different roles cannot see each other's credential.
     """
     try:
         result = subprocess.run(
@@ -83,7 +85,7 @@ def gh_json(
     args: Sequence[str],
     *,
     cwd: Path | None = None,
-    token: str | None = None,
+    token: InstallationToken | None = None,
 ) -> Any:
     """Run `gh` and decode what it printed, or raise `GhError`."""
     output = run_gh(args, cwd=cwd, token=token)
@@ -93,7 +95,7 @@ def gh_json(
         raise GhError(args, f"printed something that is not JSON — {error}") from error
 
 
-def _environment(token: str | None) -> Mapping[str, str] | None:
+def _environment(token: InstallationToken | None) -> Mapping[str, str] | None:
     """`None` means "inherit", which is the human's own login."""
     if token is None:
         return None

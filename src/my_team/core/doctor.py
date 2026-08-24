@@ -29,7 +29,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Final
 
-from my_team.core.config import KEY_MODE, ROLE_NAMES, Config, RoleConfig
+from my_team.core.config import KEY_MODE, ROLE_NAMES, ROLE_PERMISSIONS, Config, RoleConfig
 from my_team.core.labels import AUTHORIZATION_LABEL, ESCALATION_LABEL
 
 WRITE_PERMISSIONS: Final = frozenset({"write", "admin"})
@@ -105,10 +105,16 @@ class Unavailable:
 
 @dataclass(frozen=True, slots=True)
 class GhFacts:
-    """`gh` on disk, and who it is logged in as — `None` when it is logged in as nobody."""
+    """`gh` on disk, and who it is logged in as.
+
+    `account` carries `Unavailable` when the lookup itself failed and `None` when `gh`
+    answered and named nobody. A timeout, a `502` and a logged-out `gh` are three
+    conditions, and reporting the first two as the third names one that is not unmet —
+    while everything downstream that needs a login is blocked by all three alike.
+    """
 
     path: str
-    account: str | None
+    account: str | Unavailable | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +169,24 @@ class Protection:
 
 
 @dataclass(frozen=True, slots=True)
+class InstallationFacts:
+    """What `/app/installations/{id}` says about the installation config names.
+
+    Resolving is only half the question. A **suspended** installation resolves and
+    grants nothing, and one whose `permissions` differ from §5's matrix grants the wrong
+    things — a reviewer holding Contents *write* can push, and an implementer without it
+    cannot. Both come back in the same response as the id, so asking costs no request.
+
+    `permissions` carries its own `Unavailable` rather than sinking the role: what an
+    installation grants is one of the checks §1 does not enumerate, and an addition
+    nobody could read must not stand where a required verdict belongs.
+    """
+
+    suspended: bool
+    permissions: Mapping[str, str] | Unavailable
+
+
+@dataclass(frozen=True, slots=True)
 class RoleFacts:
     """One role's declared identity beside what the platform says about it.
 
@@ -171,13 +195,15 @@ class RoleFacts:
     with it. `key_path` is `declared.key_path` expanded, which is why it is a fact —
     expansion depends on `$HOME`, and the core never reads the environment.
 
-    The last two fields are asked of two different services, so each carries its own
-    `Unavailable` and neither stands in for the other. Coverage is the one check here
-    §1 does not enumerate — an addition that must never suppress a requirement — while
-    the bot id is looked up as the human, which makes a failed `gh` its answer rather
-    than a bot account that "did not resolve". `installation_reaches_repo` is `None`
-    when the target repo could not be named at all: the rest of a role's identity is
-    provable with its own key alone, and stays checkable when the human's login is not.
+    `installation` is `None` when the id does not resolve at all, and carries what it
+    grants when it does. The last two fields are asked of two different services, so
+    each carries its own `Unavailable` and neither stands in for the other. Coverage is
+    one of the checks §1 does not enumerate — an addition that must never suppress a
+    requirement — while the bot id is looked up as the human, which makes a failed `gh`
+    its answer rather than a bot account that "did not resolve".
+    `installation_reaches_repo` is `None` when the target repo could not be named at
+    all: the rest of a role's identity is provable with its own key alone, and stays
+    checkable when the human's login is not.
     """
 
     declared: RoleConfig
@@ -185,7 +211,7 @@ class RoleFacts:
     key_mode: int | None
     key_inside_repo: bool
     app_slug: str | None
-    installation_resolved: bool
+    installation: InstallationFacts | None
     installation_reaches_repo: bool | Unavailable | None
     bot_user_id: int | Unavailable | None
 
@@ -220,6 +246,8 @@ def _findings(facts: Facts) -> Iterator[Finding]:
     yield _product_owner(facts.product_owner)
     for name in ROLE_NAMES:
         yield from _role(name, facts.roles.get(name))
+    if not isinstance(facts.config, Unavailable):
+        yield _distinct_identities(facts.config)
     yield _merge_policy(facts.repo)
     yield _labels(facts.repo)
     yield from _protection(facts.protection)
@@ -236,9 +264,15 @@ def _advisory(check: str, status: Status, detail: str) -> Finding:
 def _gh(facts: GhFacts | Unavailable) -> Finding:
     if isinstance(facts, Unavailable):
         return _blocking("gh", Status.FAIL, facts.reason)
+    if isinstance(facts.account, Unavailable):
+        # The lookup failed rather than answering "nobody". A timeout and an expired
+        # token both leave the loop unable to act, and they are not the same thing to
+        # fix, so what `gh` said about it is what gets reported.
+        return _blocking(
+            "gh", Status.FAIL, f"{facts.path} could not name an account — {facts.account.reason}"
+        )
     if facts.account is None:
-        # Not logged in and unreachable look identical from here, and `gh auth status`
-        # is the command that tells them apart — so it is the one named.
+        # `gh` answered, and named nobody. `gh auth status` is the command that says why.
         return _blocking(
             "gh",
             Status.FAIL,
@@ -302,89 +336,84 @@ def _role(name: str, facts: RoleFacts | Unavailable | None) -> Sequence[Finding]
         return [_blocking(check, Status.FAIL, "no entry — the roster is exactly three roles")]
     if isinstance(facts, Unavailable):
         return [_blocking(check, Status.FAIL, facts.reason)]
-    return [*_identity(check, facts), *_coverage(check, facts)]
+    return [*_identity(check, name, facts), *_unanswered(check, facts)]
 
 
-def _identity(check: str, facts: RoleFacts) -> Sequence[Finding]:
-    """Everything §1 requires of a role, in the order a human can act on it."""
+def _identity(check: str, name: str, facts: RoleFacts) -> Sequence[Finding]:
+    """One blocking line per role: the first thing wrong with it, or that it is sound.
+
+    Two runs, and the order between them is load-bearing. Everything §1 enumerates comes
+    first, in the order a human can act on it — there is no point asking GitHub about a
+    key that is not there. The three questions §1 does not enumerate follow, so that an
+    addition can never report in place of a requirement — and each of them blocks only
+    on a definite answer, because an addition that could not be asked is `_unanswered`'s
+    line rather than this one.
+    """
     declared = facts.declared
+
+    def fail(detail: str) -> Sequence[Finding]:
+        return [_blocking(check, Status.FAIL, detail)]
+
+    # ── What §1 requires ─────────────────────────────────────────────────────────
     if facts.key_mode is None:
-        return [_blocking(check, Status.FAIL, f"no key at {facts.key_path}")]
+        return fail(f"no key at {facts.key_path}")
     if facts.key_inside_repo:
         # A key inside the repo is one `git add .` from being published, which no file
         # mode prevents — so it is reported ahead of the mode.
-        return [
-            _blocking(
-                check,
-                Status.FAIL,
-                f"{facts.key_path} is inside the target repo — role keys live outside every repo",
-            )
-        ]
+        return fail(
+            f"{facts.key_path} is inside the target repo — role keys live outside every repo"
+        )
     if facts.key_mode != KEY_MODE:
-        return [
-            _blocking(
-                check,
-                Status.FAIL,
-                f"{facts.key_path} is mode {facts.key_mode:04o} — role keys are "
-                f"{KEY_MODE:04o}; run `chmod {KEY_MODE:o}` on it",
-            )
-        ]
+        return fail(
+            f"{facts.key_path} is mode {facts.key_mode:04o} — role keys are "
+            f"{KEY_MODE:04o}; run `chmod {KEY_MODE:o}` on it"
+        )
     if facts.app_slug is None:
-        return [
-            _blocking(
-                check,
-                Status.FAIL,
-                f"the key at {facts.key_path} does not authenticate as app_id {declared.app_id}",
-            )
-        ]
-    if not facts.installation_resolved:
-        return [
-            _blocking(
-                check,
-                Status.FAIL,
-                f"installation_id {declared.installation_id} does not resolve for "
-                f"{facts.app_slug} — is the App installed anywhere?",
-            )
-        ]
+        return fail(
+            f"the key at {facts.key_path} does not authenticate as app_id {declared.app_id}"
+        )
+    if facts.installation is None:
+        return fail(
+            f"installation_id {declared.installation_id} does not resolve for "
+            f"{facts.app_slug} — is the App installed anywhere?"
+        )
+    if isinstance(facts.bot_user_id, Unavailable):
+        # The lookup is made as the human, so a failed one is a fact about `gh` — and
+        # naming the bot account here put three misleading lines under the one true one.
+        return fail(
+            f"bot_user_id {declared.bot_user_id} is unconfirmed — {facts.bot_user_id.reason}"
+        )
+    if facts.bot_user_id is None:
+        return fail(
+            f"{facts.app_slug}[bot] did not resolve, so bot_user_id "
+            f"{declared.bot_user_id} is unconfirmed"
+        )
+    if facts.bot_user_id != declared.bot_user_id:
+        return fail(
+            f"bot_user_id is {declared.bot_user_id} but {facts.app_slug}[bot] "
+            f"is {facts.bot_user_id}"
+        )
+
+    # ── And the three things it does not ─────────────────────────────────────────
+    if facts.installation.suspended:
+        return fail(
+            f"installation {declared.installation_id} is suspended — it resolves and "
+            f"grants {facts.app_slug} nothing until it is unsuspended"
+        )
+    wrong = _wrong_permissions(name, facts.installation.permissions)
+    if wrong:
+        return fail(
+            f"installation {declared.installation_id} grants {wrong} — the {name}'s "
+            f"authority is fixed, and widening it means re-accepting the installation"
+        )
     if facts.installation_reaches_repo is False:
         # Resolving proves the installation exists; this proves it is the one covering
         # the repo the loop is pointed at. Without it a role passes `doctor` and then
         # fails its first write.
-        return [
-            _blocking(
-                check,
-                Status.FAIL,
-                f"installation {declared.installation_id} does not cover this repo — "
-                f"install {facts.app_slug} on it, or config names the wrong installation",
-            )
-        ]
-    if isinstance(facts.bot_user_id, Unavailable):
-        return [
-            _blocking(
-                check,
-                Status.FAIL,
-                f"{facts.app_slug}[bot] was not looked up, so bot_user_id "
-                f"{declared.bot_user_id} is unconfirmed — {facts.bot_user_id.reason}",
-            )
-        ]
-    if facts.bot_user_id is None:
-        return [
-            _blocking(
-                check,
-                Status.FAIL,
-                f"{facts.app_slug}[bot] did not resolve, so bot_user_id "
-                f"{declared.bot_user_id} is unconfirmed",
-            )
-        ]
-    if facts.bot_user_id != declared.bot_user_id:
-        return [
-            _blocking(
-                check,
-                Status.FAIL,
-                f"bot_user_id is {declared.bot_user_id} but {facts.app_slug}[bot] "
-                f"is {facts.bot_user_id}",
-            )
-        ]
+        return fail(
+            f"installation {declared.installation_id} does not cover this repo — "
+            f"install {facts.app_slug} on it, or config names the wrong installation"
+        )
     return [
         _blocking(
             check,
@@ -395,23 +424,94 @@ def _identity(check: str, facts: RoleFacts) -> Sequence[Finding]:
     ]
 
 
-def _coverage(check: str, facts: RoleFacts) -> Sequence[Finding]:
-    """One line, and only when the repo-coverage probe failed outright.
+def _wrong_permissions(name: str, granted: Mapping[str, str] | Unavailable) -> str:
+    """Which of the role's three fixed permissions the installation does not carry.
 
-    Silent when it answered either way — `True` needs no saying and `False` is already
-    on the blocking line — and silent when the repo could not be named at all, because
-    then `gh` has failed its own check and this has nothing to add to it.
+    Nothing at all when what it grants could not be read: this check blocks a run, and a
+    grant nobody could read is not a grant that is wrong.
     """
-    if not isinstance(facts.installation_reaches_repo, Unavailable):
-        return []
-    return [
-        _advisory(
-            f"{check} coverage",
-            Status.WARN,
-            f"whether installation {facts.declared.installation_id} covers this repo "
-            f"could not be checked — {facts.installation_reaches_repo.reason}",
-        )
+    if isinstance(granted, Unavailable):
+        return ""
+    return "; ".join(
+        f"{permission} {granted.get(permission, 'no access')} rather than {level}"
+        for permission, level in ROLE_PERMISSIONS[name].items()
+        if granted.get(permission) != level
+    )
+
+
+def _distinct_identities(config: Config) -> Finding:
+    """No two roles may be the same App or the same bot user.
+
+    Platform-enforced rather than orchestrator-policed, which is precisely why it is
+    worth checking here: an App approving its own pull request is refused with a `422`
+    and **no review recorded**, so a roster that shares one identity between the
+    implementer and the judge passes every other check and then deadlocks at the end of
+    a round, on the one action that cannot be retried into working.
+    """
+    shared = [
+        f"{key} {value} is shared by {' and '.join(names)}"
+        for key, value, names in _shared_identities(config)
     ]
+    if shared:
+        return _blocking(
+            "role identities",
+            Status.FAIL,
+            f"{'; '.join(shared)} — one identity cannot both open and approve a pull request",
+        )
+    return _blocking("role identities", Status.PASS, "three distinct Apps and bot users")
+
+
+def _shared_identities(config: Config) -> Iterator[tuple[str, int, tuple[str, ...]]]:
+    """Each id more than one role declares, as `(which id, its value, the roles)`."""
+    holders: dict[tuple[str, int], list[str]] = {}
+    for name in ROLE_NAMES:
+        for key, value in _identifying(getattr(config.roles, name)).items():
+            holders.setdefault((key, value), []).append(name)
+    for (key, value), names in holders.items():
+        if len(names) > 1:
+            yield key, value, tuple(names)
+
+
+def _identifying(role: RoleConfig) -> Mapping[str, int]:
+    """The two ids that say who a role *is*: its App, and the account it acts as.
+
+    `installation_id` is not one of them — an installation belongs to one App, so two
+    roles cannot share one without already sharing the `app_id` above it.
+    """
+    return {"app_id": role.app_id, "bot_user_id": role.bot_user_id}
+
+
+def _unanswered(check: str, facts: RoleFacts) -> Sequence[Finding]:
+    """One line per check §1 does not enumerate that could not be asked at all.
+
+    Severity is fixed per check and never per outcome, so a question that cannot block
+    gets its own name and its own advisory severity rather than a warning wearing a
+    blocking one. Each is silent when it was answered: a definite answer is already on
+    the blocking line, and `True` needs no saying. Coverage is silent too when the repo
+    could not be named at all, because then `gh` has failed its own check and this has
+    nothing to add to it.
+    """
+    installation = facts.installation
+    findings = []
+    if isinstance(facts.installation_reaches_repo, Unavailable):
+        findings.append(
+            _advisory(
+                f"{check} coverage",
+                Status.WARN,
+                f"whether installation {facts.declared.installation_id} covers this repo "
+                f"could not be checked — {facts.installation_reaches_repo.reason}",
+            )
+        )
+    if installation is not None and isinstance(installation.permissions, Unavailable):
+        findings.append(
+            _advisory(
+                f"{check} authority",
+                Status.WARN,
+                f"what installation {facts.declared.installation_id} grants could not be "
+                f"read — {installation.permissions.reason}",
+            )
+        )
+    return findings
 
 
 def _merge_policy(repo: RepoFacts | Unavailable) -> Finding:

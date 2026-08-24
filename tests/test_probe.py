@@ -15,6 +15,7 @@ import json
 import shutil
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -22,10 +23,11 @@ from typing import Any
 import pytest
 
 from findings import find, status_of
-from my_team.core.config import KEY_MODE
+from my_team.core.config import KEY_MODE, ROLE_NAMES, ROLE_PERMISSIONS
 from my_team.core.doctor import (
     GhFacts,
     HarnessFacts,
+    InstallationFacts,
     ProductOwnerFacts,
     Protection,
     RepoFacts,
@@ -78,7 +80,17 @@ SLUGS = {
     4652145: ("judge-my-team", 318752691),
 }
 INSTALLATIONS = {4652114: 155006997, 4608397: 154043927, 4652145: 155007556}
+ROLE_OF = dict(zip(INSTALLATIONS.values(), ROLE_NAMES, strict=True))
 REPO_INSTALLATION = f"/repos/{REPO}/installation"
+
+
+def installed(installation_id: int) -> dict[str, Any]:
+    """An installation as GitHub describes it: the id, and what it was accepted with."""
+    return {
+        "id": installation_id,
+        "suspended_at": None,
+        "permissions": {**ROLE_PERMISSIONS[ROLE_OF[installation_id]], "metadata": "read"},
+    }
 
 
 def refused(status: int, path: str) -> urllib.error.HTTPError:
@@ -119,7 +131,7 @@ class World:
             **{f"api /users/{slug}%5Bbot%5D --jq .id": f"{bot}\n" for slug, bot in SLUGS.values()},
         }
         self.api: dict[str, Any] = {
-            f"/app/installations/{one}": {"id": one} for one in INSTALLATIONS.values()
+            f"/app/installations/{one}": installed(one) for one in INSTALLATIONS.values()
         }
         self.app_override: Any = None
         self.repo_installation_override: Any = None
@@ -290,7 +302,10 @@ def test_a_sound_role_reports_its_slug_installation_and_bot_user(
     found = role(probed(repo_root))
 
     assert found.app_slug == "implementer-my-team"
-    assert found.installation_resolved
+    assert found.installation == InstallationFacts(
+        suspended=False,
+        permissions={**ROLE_PERMISSIONS["implementer"], "metadata": "read"},
+    )
     assert found.bot_user_id == 318751706
     assert found.key_mode == KEY_MODE
     assert not found.key_inside_repo
@@ -353,7 +368,7 @@ def test_an_installation_that_is_gone_is_reported_as_unresolved(
     found = role(probed(repo_root))
 
     assert found.app_slug == "implementer-my-team"
-    assert not found.installation_resolved
+    assert found.installation is None
     assert found.bot_user_id is None
 
 
@@ -406,7 +421,7 @@ def test_a_coverage_check_that_could_not_run_still_reports_what_was_proven(
 
     assert isinstance(found, RoleFacts)
     assert found.app_slug == "implementer-my-team"
-    assert found.installation_resolved
+    assert found.installation is not None
     assert found.bot_user_id == 318751706
     assert isinstance(found.installation_reaches_repo, Unavailable)
 
@@ -437,10 +452,24 @@ def test_a_bot_user_id_that_disagrees_is_still_caught_when_coverage_could_not_ru
     assert "999" in finding.detail
 
 
-def test_a_bot_user_that_cannot_be_looked_up_is_left_unconfirmed(
+def test_a_bot_user_lookup_that_failed_carries_what_gh_said_about_it(
     world: World, repo_root: Path
 ) -> None:
+    # A `404` under that login, a timeout and a `502` are three conditions with three
+    # fixes. Collapsing them all into "the bot did not resolve" describes only the first.
     del world.gh["api /users/implementer-my-team%5Bbot%5D --jq .id"]
+    found = role(probed(repo_root))
+
+    assert isinstance(found.bot_user_id, Unavailable)
+    assert "404" in found.bot_user_id.reason
+
+
+def test_a_bot_user_gh_named_without_an_id_is_left_unconfirmed(
+    world: World, repo_root: Path
+) -> None:
+    # `gh` succeeded and printed no number, which is the one answer that really is about
+    # the account rather than about the lookup.
+    world.gh["api /users/implementer-my-team%5Bbot%5D --jq .id"] = "\n"
 
     assert role(probed(repo_root)).bot_user_id is None
 
@@ -529,6 +558,89 @@ def test_an_app_described_without_a_slug_is_reported(world: World, repo_root: Pa
     assert isinstance(role(probed(repo_root)), Unavailable)
 
 
+def test_a_suspended_installation_is_read_off_the_same_response_that_resolved_it(
+    world: World, repo_root: Path
+) -> None:
+    # GitHub suspends an installation without removing it, so resolving proves only that
+    # it exists. `suspended_at` comes back beside the id and costs no second request.
+    world.api["/app/installations/155006997"] = {
+        **installed(155006997),
+        "suspended_at": "2026-08-20T10:00:00Z",
+    }
+    found = role(probed(repo_root))
+
+    assert found.installation is not None
+    assert found.installation.suspended
+    assert status_of(probed(repo_root), "role implementer") is Status.FAIL
+
+
+def test_the_authority_an_installation_was_accepted_with_is_what_gets_reported(
+    world: World, repo_root: Path
+) -> None:
+    # Not what the App asks for now: widening a permission leaves the installation on
+    # the old set until a human re-accepts it, which is the state worth catching.
+    world.api["/app/installations/154043927"] = {
+        **installed(154043927),
+        "permissions": {"contents": "write", "pull_requests": "write", "issues": "read"},
+    }
+    finding = find(probed(repo_root), "role reviewer")
+
+    assert finding.status is Status.FAIL
+    assert "contents" in finding.detail
+
+
+def test_an_installation_described_without_readable_permissions_still_proves_the_rest(
+    world: World, repo_root: Path
+) -> None:
+    # What an installation grants is one of the checks §1 does not enumerate. Returning
+    # it in place of the role left a key, an App and a bot id that were all proven
+    # reported as though none of them had been looked at.
+    world.api["/app/installations/155006997"] = {"id": 155006997}
+    found = role(probed(repo_root))
+    facts = probed(repo_root)
+
+    assert isinstance(found, RoleFacts)
+    assert found.bot_user_id == 318751706
+    assert found.installation is not None
+    assert isinstance(found.installation.permissions, Unavailable)
+    assert status_of(facts, "role implementer") is Status.PASS
+    assert status_of(facts, "role implementer authority") is Status.WARN
+    assert evaluate(facts).ok, "an addition to §1's list cannot block when it cannot run"
+
+
+def test_a_bot_user_id_that_disagrees_is_still_caught_when_the_grant_is_unreadable(
+    world: World, repo_root: Path
+) -> None:
+    world.api["/app/installations/155006997"] = {"id": 155006997}
+    world.gh["api /users/implementer-my-team%5Bbot%5D --jq .id"] = "999\n"
+    finding = find(probed(repo_root), "role implementer")
+
+    assert finding.status is Status.FAIL
+    assert "999" in finding.detail
+
+
+@pytest.mark.parametrize("answer", [["not", "an", "object"], "a string"])
+def test_an_app_response_that_is_not_an_object_is_reported_rather_than_crashing(
+    world: World, repo_root: Path, answer: Any
+) -> None:
+    # Every caller reads what came back by key. A `200` carrying an array reached `.get`
+    # as an `AttributeError` out of role diagnosis rather than as a finding.
+    world.app_override = answer
+
+    assert isinstance(role(probed(repo_root)), Unavailable)
+
+
+def test_a_repo_installation_named_without_an_id_is_not_a_definite_no(
+    world: World, repo_root: Path
+) -> None:
+    # `False` here blocks a run, so it is claimed only on an answer that says so.
+    world.repo_installation_override = {"node_id": "MDIz"}
+    found = role(probed(repo_root))
+
+    assert isinstance(found.installation_reaches_repo, Unavailable)
+    assert status_of(probed(repo_root), "role implementer") is Status.PASS
+
+
 # ── Branch protection ────────────────────────────────────────────────────────────
 
 
@@ -539,6 +651,26 @@ def test_an_unprotected_branch_is_read_off_the_branch_rather_than_a_404(
 
     assert facts.protection == Unprotected(branch="main")
     assert not [call for call in world.gh_calls if "protection" in " ".join(call)]
+
+
+@pytest.mark.parametrize("branch", ["release#1", "release/1.0", "feature?x"])
+def test_a_default_branch_is_asked_after_as_one_path_segment(
+    world: World, repo_root: Path, branch: str
+) -> None:
+    """A branch name is not a URL fragment, and `#` is legal in one.
+
+    Interpolated raw, `release#1` asks GitHub about `release` — which either does not
+    exist or is somebody else's branch, and either way the protection reported is not
+    the default branch's. Encoding `/` as well is measured rather than assumed: GitHub
+    resolves both spellings of a branch name identically.
+    """
+    encoded = urllib.parse.quote(branch, safe="")
+    world.gh[f"api repos/{REPO}"] = json.dumps({**REPO_PAYLOAD, "default_branch": branch})
+    world.gh[f"api repos/{REPO}/branches/{encoded} --jq .protected"] = "false\n"
+    facts = probed(repo_root)
+
+    assert facts.protection == Unprotected(branch=branch)
+    assert [call for call in world.gh_calls if encoded in " ".join(call)]
 
 
 def test_a_protected_branch_is_described(world: World, repo_root: Path) -> None:
@@ -607,7 +739,8 @@ def test_gh_that_cannot_name_an_account_is_not_authenticated(world: World, repo_
     del world.gh["api user --jq .login"]
     facts = probed(repo_root)
 
-    assert facts.gh == GhFacts(path="/opt/homebrew/bin/gh", account=None)
+    assert isinstance(facts.gh, GhFacts)
+    assert isinstance(facts.gh.account, Unavailable)
     assert isinstance(facts.repo, Unavailable)
 
 
@@ -631,6 +764,21 @@ def test_a_directory_that_is_not_a_github_repo_is_reported(world: World, repo_ro
 
     assert isinstance(facts.repo, Unavailable)
     assert str(repo_root) in facts.repo.reason
+
+
+def test_a_config_that_will_not_read_is_a_finding_rather_than_a_traceback(
+    world: World, repo_root: Path
+) -> None:
+    # `doctor` blocks on this file parsing, and every way it refuses to be read has to
+    # arrive as that check failing — a directory in its place included.
+    config = repo_root / ".my-team" / "config.toml"
+    config.unlink()
+    config.mkdir()
+    facts = probed(repo_root)
+
+    assert isinstance(facts.config, Unavailable)
+    assert status_of(facts, "config") is Status.FAIL
+    assert str(config) in find(facts, "config").detail
 
 
 def test_a_missing_config_leaves_the_roles_unchecked_and_says_why(
@@ -703,7 +851,9 @@ def test_a_hung_gh_does_not_hang_the_diagnosis(world: World, repo_root: Path) ->
     facts = probed(repo_root)
 
     assert isinstance(facts.gh, GhFacts)
-    assert facts.gh.account is None
+    assert isinstance(facts.gh.account, Unavailable)
+    assert "timed out" in facts.gh.account.reason
+    assert "timed out" in find(facts, "gh").detail, "and a timeout is not a logged-out gh"
 
 
 def test_every_role_still_gets_an_answer_when_one_of_them_is_broken(

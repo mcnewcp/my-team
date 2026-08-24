@@ -196,14 +196,76 @@ ROSTER="implementer reviewer judge"
 # Three roles, settled in mcnewcp/my-team#7. Role is the only name in play — #10 took
 # personas out of v0.1, so the App, the key and the config all share it.
 #
-#   role_meta ROLE -> "contents<TAB>pull requests<TAB>issues"
-role_meta() {
+# role_permissions ROLE -> one `<permission>=<level>` per line
+#
+# §5's authority matrix, spelled the way the installation API reports it, and the only
+# place this script writes it down: the browser stage reads the labels it tells a human
+# to click off this, and the verify stage checks the installation GitHub describes
+# against the same three lines. Two spellings of one matrix would drift, and the drift
+# would be a wizard that certifies a role it told you to provision differently.
+#
+# Matched exactly rather than as a floor, because the matrix is two prohibitions as much
+# as a grant: the reviewer's `contents=read` is "the reviewer never pushes", and the
+# implementer's `issues=read` is "the implementer never files issues".
+role_permissions() {
   case "$1" in
-    implementer) printf 'Read and write\tRead and write\tRead-only' ;;
-    reviewer)    printf 'Read-only\tRead and write\tRead-only' ;;
-    judge)       printf 'Read and write\tRead and write\tRead and write' ;;
+    implementer) printf 'contents=write\npull_requests=write\nissues=read\n' ;;
+    reviewer)    printf 'contents=read\npull_requests=write\nissues=read\n' ;;
+    judge)       printf 'contents=write\npull_requests=write\nissues=write\n' ;;
     *)           return 1 ;;
   esac
+}
+
+# permission_label PERMISSION LEVEL — one line of the App form, as GitHub labels it.
+permission_label() {
+  local name level
+  case "$1" in
+    contents)      name="Contents" ;;
+    pull_requests) name="Pull requests" ;;
+    issues)        name="Issues" ;;
+    *)             name="$1" ;;
+  esac
+  case "$2" in
+    write) level="Read and write" ;;
+    read)  level="Read-only" ;;
+    *)     level="No access" ;;
+  esac
+  printf '%s %s %s' "$name" "$(_dots "$name")" "$level"
+}
+
+# _dots NAME — the leader that lines the three permission lines up.
+_dots() { printf '%*s' "$((20 - ${#1}))" '' | tr ' ' '.'; }
+
+# permission_problems ROLE GRANTED — which of the role's fixed permissions the
+# installation does not carry, one per line; nothing at all when the matrix matches.
+# GRANTED is `<permission>=<level>` lines, the shape installation_permissions reads out
+# of the API — so this stays plain shell and is checked by a test.
+permission_problems() {
+  local role="$1" granted="$2" permission level held
+  while IFS='=' read -r permission level; do
+    [[ -n "$permission" ]] || continue
+    held=$(printf '%s\n' "$granted" | sed -n "s/^${permission}=//p" | tail -n1)
+    [[ "$held" == "$level" ]] \
+      || printf '%s is %s rather than %s\n' "$permission" "${held:-no access}" "$level"
+  done < <(role_permissions "$role")
+}
+
+# installation_permissions JSON — what one installation grants, as the lines above.
+installation_permissions() {
+  printf '%s' "$1" | jq -r '.permissions // {} | to_entries[] | "\(.key)=\(.value)"'
+}
+
+# installation_repos TOKEN — every repository the installation reaches, one per line.
+# Fails when the listing does, rather than answering "none": those are different facts
+# about the installation and only one of them is the human's to fix.
+#
+# `--paginate` because the endpoint answers 30 at a time. Without it a target repo that
+# sorts onto the second page reads as one the installation cannot reach — so the wizard
+# withholds a config block it has actually earned — while an installation scoped far
+# wider than the target set passes as though it were narrow.
+installation_repos() {
+  GH_TOKEN="$1" gh api /installation/repositories --paginate \
+    --jq '.repositories[].full_name' 2>/dev/null
 }
 
 # base64url — no padding, no line wrapping, URL-safe alphabet.
@@ -328,7 +390,7 @@ ANSWER="${ANSWER:-all}"
 
 if [[ "$ANSWER" == "all" ]]; then
   ROLES="$ROSTER"
-elif role_meta "$ANSWER" >/dev/null; then
+elif role_permissions "$ANSWER" >/dev/null; then
   ROLES="$ANSWER"
 else
   printf '\n'
@@ -384,9 +446,7 @@ pause "Press Enter to begin."
 
 # ── One role, four stages ─────────────────────────────────────────────────
 provision_role() {
-  local role="$1" resync="$2" meta
-  meta=$(role_meta "$role")
-  IFS=$'\t' read -r PERM_CONTENTS PERM_PULLS PERM_ISSUES <<<"$meta"
+  local role="$1" resync="$2"
 
   ENV_FILE="$CONFIG_DIR/$role.env"      # non-secret ids only; outside every repo
   PEM_PATH="$KEY_DIR/$role.pem"
@@ -406,7 +466,7 @@ provision_role() {
 
 # ── Stage 1 — register the app (browser only) ─────────────────────────────
 register_app() {
-  local role="$1"
+  local role="$1" _permission _level
   stage "$role · register the GitHub App"
   say "This is the long one: one form, then Create. Everything else is quick."
   open_url "https://github.com/settings/apps/new"
@@ -417,9 +477,12 @@ register_app() {
   step "Webhook — UNCHECK 'Active'. This removes the URL / secret / SSL fields."
   say ""
   say "Repository permissions for $role — leave every other one at 'No access':"
-  step "Contents ............ $PERM_CONTENTS"
-  step "Pull requests ....... $PERM_PULLS"
-  step "Issues .............. $PERM_ISSUES"
+  # Read off role_permissions rather than written out again: the verify stage checks the
+  # installation against those same three lines, and a wizard whose instructions and
+  # whose verdict disagreed would certify a role it told you to provision differently.
+  while IFS='=' read -r _permission _level; do
+    [[ -n "$_permission" ]] && step "$(permission_label "$_permission" "$_level")"
+  done < <(role_permissions "$role")
   warn "Set these correctly now — widening them later makes you re-accept the installation."
   say ""
   step "Where can this GitHub App be installed? — 'Only on this account'"
@@ -489,9 +552,11 @@ install_app() {
 # ── Stage 4 — verify, and read back the ids config will key on ────────────
 verify_role() {
   local role="$1" jwt app_json live_slug live_name token repos missing extra proven=1
+  local installation granted wrong _line
   stage "$role · verify and record the identity"
-  say "Proves the key is a role key and signs, that the app is installed, and that its"
-  say "token reaches the repo — then reads back the ids .my-team/config.toml keys on."
+  say "Proves the key is a role key and signs, that the app is installed, that it holds"
+  say "the authority the role is fixed to and that its token reaches the repo — then"
+  say "reads back the ids .my-team/config.toml keys on."
 
   # The earlier verdict stops counting the moment this one starts. Every return below
   # leaves the recorded ids in place, and a config block emitted from them would read as
@@ -547,8 +612,12 @@ verify_role() {
     proven=0
   fi
 
-  INSTALLATION_ID=$(app_api "$jwt" /app/installations | jq -r --arg a "$ACCOUNT" '
-      map(select(.account.login == $a)) | .[0].id // empty' || true)
+  # The whole installation rather than its id alone: `suspended_at` and the permissions
+  # it was accepted with come back in the same response, and an installation that
+  # resolves is not yet one the loop can act with.
+  installation=$(app_api "$jwt" /app/installations | jq -c --arg a "$ACCOUNT" '
+      map(select(.account.login == $a)) | .[0] // empty' || true)
+  INSTALLATION_ID=$(printf '%s' "$installation" | jq -r '.id // empty' 2>/dev/null || true)
 
   if [[ -z "$INSTALLATION_ID" ]]; then
     warn "the app reports no installation — did the install stage complete?"
@@ -556,6 +625,26 @@ verify_role() {
     pause; return 0
   fi
   write_env INSTALLATION_ID "$INSTALLATION_ID"
+
+  if [[ -n "$(printf '%s' "$installation" | jq -r '.suspended_at // empty')" ]]; then
+    warn "the installation is suspended — every id resolves and it grants $role nothing."
+    SKIPPED+=("$role: unsuspend the installation for $APP_SLUG")
+    proven=0
+  fi
+
+  # Not what the App asks for now — what this installation was accepted with. Widening a
+  # permission leaves the installation on the old set until a human re-accepts it, and
+  # `my-team doctor` blocks on exactly this comparison.
+  granted=$(installation_permissions "$installation")
+  wrong=$(permission_problems "$role" "$granted")
+  if [[ -n "$wrong" ]]; then
+    warn "the installation does not carry the authority the $role role is fixed to:"
+    while read -r _line; do [[ -n "$_line" ]] && note "  - $_line"; done <<<"$wrong"
+    SKIPPED+=("$role: fix its permissions on the App, then re-accept the installation")
+    proven=0
+  else
+    printf '  %s✓ authority%s matches the %s row\n' "$GREEN" "$RESET" "$role"
+  fi
 
   token=$(app_api "$jwt" "/app/installations/$INSTALLATION_ID/access_tokens" -X POST \
             | jq -r '.token // empty' || true)
@@ -565,9 +654,13 @@ verify_role() {
     pause; return 0
   fi
 
-  repos=$(GH_TOKEN="$token" gh api /installation/repositories \
-            --jq '.repositories[].full_name' 2>/dev/null || true)
   printf '  %s✓ token minted%s (expires in 1 hour, never written to disk)\n' "$GREEN" "$RESET"
+  if ! repos=$(installation_repos "$token"); then
+    warn "could not list the repositories the installation reaches."
+    note "which is a fact about the request, not about the installation's scope."
+    SKIPPED+=("$role: re-run this wizard to check what the installation reaches")
+    pause; return 0
+  fi
   missing=""
   for _r in $TARGET_REPOS; do
     if printf '%s\n' "$repos" | grep -qx "$_r"; then

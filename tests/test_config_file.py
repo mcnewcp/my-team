@@ -77,3 +77,24 @@ def test_a_bad_key_names_both_the_path_and_the_key(tmp_path: Path) -> None:
 
     assert str(config_path(tmp_path)) in str(caught.value)
     assert "required_checks" in str(caught.value)
+
+
+def test_a_config_that_cannot_be_opened_names_the_path_rather_than_raising(tmp_path: Path) -> None:
+    # `doctor` is the command whose whole job is naming the unmet precondition, so every
+    # way this file refuses to be read has to arrive as the same kind of finding. A
+    # directory where the config belongs is the one shape every filesystem agrees on.
+    config_path(tmp_path).parent.mkdir(parents=True)
+    config_path(tmp_path).mkdir()
+
+    with pytest.raises(ConfigError, match=re.escape(str(config_path(tmp_path)))):
+        load_config(tmp_path)
+
+
+def test_a_config_that_is_not_utf_8_names_the_path_rather_than_raising(tmp_path: Path) -> None:
+    # TOML is UTF-8 by definition, so `tomllib` decodes before it parses and a stray byte
+    # raises out of the decode rather than as a `TOMLDecodeError`.
+    path = write_config(tmp_path, "")
+    path.write_bytes(b'product_owner = "\xff\xfe"\n')
+
+    with pytest.raises(ConfigError, match=re.escape(str(config_path(tmp_path)))):
+        load_config(tmp_path)

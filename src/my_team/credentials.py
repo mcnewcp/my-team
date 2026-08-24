@@ -18,10 +18,12 @@ controls and revocation takes seconds.
 
 from __future__ import annotations
 
+import http.client
 import json
 import stat
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
@@ -116,7 +118,7 @@ def app_jwt_for(role: RoleConfig, *, now: int) -> str:
     return app_jwt(read_private_key(key_file(role)), app_id=role.app_id, now=now)
 
 
-def app_get(jwt: str, path: str) -> Any:
+def app_get(jwt: str, path: str) -> Mapping[str, Any]:
     """A GET made as the App itself. `gh api` cannot do this — it sends
     `Authorization: token`, and an App identity needs `Bearer`."""
     return _api(path, jwt, method="GET")
@@ -129,25 +131,30 @@ def installation_token(role: RoleConfig, *, now: int) -> InstallationToken:
     would be a second clock to get wrong, and the token would then have to live
     somewhere.
     """
-    minted = _api(
-        f"/app/installations/{role.installation_id}/access_tokens",
-        app_jwt_for(role, now=now),
-        method="POST",
-    )
-    return InstallationToken(token=minted["token"], expires_at=minted["expires_at"])
+    path = f"/app/installations/{role.installation_id}/access_tokens"
+    minted = _api(path, app_jwt_for(role, now=now), method="POST")
+    token, expires_at = minted.get("token"), minted.get("expires_at")
+    if not isinstance(token, str) or not isinstance(expires_at, str):
+        raise CredentialError(f"{path}: GitHub answered without a token and an expiry")
+    return InstallationToken(token=token, expires_at=expires_at)
 
 
-def token_env(token: str) -> dict[str, str]:
+def token_env(token: InstallationToken) -> dict[str, str]:
     """The environment overlay that makes one subprocess act as a role.
+
+    Takes the token rather than the string inside it: this is the boundary the secret
+    exists to cross, so it is the one place that unwraps one. A caller that had to say
+    `.token` to pass it along would be carrying a bare `str` through every frame in
+    between, which is exactly where the redacted `repr` was meant to keep it out of.
 
     Deliberately not a mutation of `os.environ`, and deliberately not `gh auth switch`:
     both would make the acting identity a property of the machine rather than of the
     call, and two ticks under different roles would then race.
     """
-    return {TOKEN_VARIABLE: token}
+    return {TOKEN_VARIABLE: token.token}
 
 
-def _api(path: str, jwt: str, *, method: str) -> Any:
+def _api(path: str, jwt: str, *, method: str) -> Mapping[str, Any]:
     request = urllib.request.Request(
         f"{GITHUB_API}{path}",
         method=method,
@@ -160,8 +167,22 @@ def _api(path: str, jwt: str, *, method: str) -> Any:
     )
     try:
         with urllib.request.urlopen(request, timeout=API_TIMEOUT_SECONDS) as response:
-            return json.load(response)
+            payload = json.load(response)
     except urllib.error.HTTPError as error:
         raise AppApiError(error.code, path, error.read().decode(errors="replace")) from error
     except urllib.error.URLError as error:
         raise CredentialError(f"{path}: could not reach GitHub — {error.reason}") from error
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        # A status GitHub is happy with says nothing about the body arriving intact. A
+        # proxy or a maintenance page answers `200` with HTML, and a connection that
+        # drops mid-body raises `IncompleteRead`, which descends from none of the
+        # families above it — both are the same finding, and neither is a traceback out
+        # of the command whose job is naming the unmet condition.
+        raise CredentialError(f"{path}: GitHub's answer could not be read — {error}") from error
+    if not isinstance(payload, dict):
+        # Every caller here reads what came back by key, so a JSON array would surface
+        # several frames later as an `AttributeError` naming a method rather than a call.
+        raise CredentialError(
+            f"{path}: GitHub answered with {type(payload).__name__} rather than an object"
+        )
+    return payload
