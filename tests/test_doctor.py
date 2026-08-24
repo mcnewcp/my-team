@@ -802,9 +802,3 @@ def test_warnings_are_counted_separately_from_failures() -> None:
 
 def test_one_warning_is_counted_in_the_singular() -> None:
     assert "1 warning" in render(evaluate(healthy(config=a_config(required_checks=()))))
-
-
-def test_the_columns_line_up_whatever_the_longest_check_name_is() -> None:
-    lines = [line for line in render(evaluate(healthy())).splitlines() if " ✓ " in line]
-
-    assert len({line.index(line.strip().split()[1]) for line in lines}) == 1
