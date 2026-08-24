@@ -6,9 +6,10 @@ sequence is fixed and short: read the role's key, sign a JWT with it
 which GitHub expires after an hour. The token is handed to exactly one subprocess
 through its environment and is never written down.
 
-Keys live at `~/.config/my-team/keys/<role>.pem`, mode `0600`, **outside every repo**:
-never a path inside the target repo, so there is nothing to `.gitignore` and nothing
-for a dispatched agent to stage by accident. `read_private_key` refuses any other mode
+Keys live at `~/.config/my-team/keys/<role>.pem`, mode `0600`, **outside every repo** —
+every work tree on the machine and not merely the one being worked in, so there is
+nothing to `.gitignore` and nothing for a dispatched agent to stage by accident.
+`read_private_key` refuses a key that is in the wrong place or carries the wrong mode
 rather than merely reporting it — `doctor` is the diagnosis, and this is the refusal.
 
 ⚠️ A risk accepted knowingly and recorded rather than papered over: a dispatched agent
@@ -97,11 +98,51 @@ def key_mode(path: Path) -> int | None:
     return found.st_mode & 0o777 if stat.S_ISREG(found.st_mode) else None
 
 
+def repo_containing(path: Path) -> Path | None:
+    """The work tree `path` sits inside, or `None` when it sits inside none.
+
+    Discovery is git's own: the nearest ancestor holding a `.git`, which is a directory
+    in a clone and a *file* in a linked worktree or a submodule — so the test is that
+    something is there, not what kind of thing. Symlinks are followed first, because the
+    file `git add .` would stage is the one at the end of the link.
+
+    Asked of ancestry rather than of the repo `doctor` was pointed at: a key under some
+    *other* clone is exactly as stageable as one under this one, and what §5 fixes is
+    outside **every** repo. It sits here rather than in `core` for the reason everything
+    else here does — answering it means asking the filesystem.
+    """
+    for candidate in path.resolve().parents:
+        if _marks_a_work_tree(candidate):
+            return candidate
+    return None
+
+
+def _marks_a_work_tree(directory: Path) -> bool:
+    """Whether git would call `directory` the root of one.
+
+    A directory that will not let itself be looked into answers no. `doctor` asks this
+    before it knows there is a key at the path at all, so an unopenable parent has to
+    come back as an answer rather than as a traceback out of the one command whose whole
+    job is naming the precondition that is unmet.
+    """
+    try:
+        return (directory / ".git").exists()
+    except OSError:
+        return False
+
+
 def read_private_key(path: Path) -> str:
     """The PEM at `path`, refusing anything a role key must not be."""
     mode = key_mode(path)
     if mode is None:
         raise CredentialError(f"no private key at {path}")
+    repo = repo_containing(path)
+    if repo is not None:
+        # Refused ahead of the mode because no mode is the fix for it: a key inside a
+        # work tree is one `git add .` from being published whatever its bits say.
+        raise CredentialError(
+            f"{path} is inside the repository at {repo} — role keys live outside every repo"
+        )
     if mode != KEY_MODE:
         raise CredentialError(f"{path} is mode {mode:04o} — role keys are {KEY_MODE:04o}")
     try:

@@ -195,6 +195,10 @@ class RoleFacts:
     with it. `key_path` is `declared.key_path` expanded, which is why it is a fact —
     expansion depends on `$HOME`, and the core never reads the environment.
 
+    `key_repo` is the work tree the key was found inside, which is the fact rather than
+    a yes/no: naming the clone is what tells a misplaced key from a mistyped path, and
+    the invariant is outside *every* repo rather than outside this one.
+
     `installation` is `None` when the id does not resolve at all, and carries what it
     grants when it does. The last two fields are asked of two different services, so
     each carries its own `Unavailable` and neither stands in for the other. Coverage is
@@ -209,7 +213,7 @@ class RoleFacts:
     declared: RoleConfig
     key_path: Path
     key_mode: int | None
-    key_inside_repo: bool
+    key_repo: Path | None
     app_slug: str | None
     installation: InstallationFacts | None
     installation_reaches_repo: bool | Unavailable | None
@@ -357,11 +361,12 @@ def _identity(check: str, name: str, facts: RoleFacts) -> Sequence[Finding]:
     # ── What §1 requires ─────────────────────────────────────────────────────────
     if facts.key_mode is None:
         return fail(f"no key at {facts.key_path}")
-    if facts.key_inside_repo:
-        # A key inside the repo is one `git add .` from being published, which no file
-        # mode prevents — so it is reported ahead of the mode.
+    if facts.key_repo is not None:
+        # A key inside a work tree is one `git add .` from being published, which no
+        # file mode prevents — so it is reported ahead of the mode.
         return fail(
-            f"{facts.key_path} is inside the target repo — role keys live outside every repo"
+            f"{facts.key_path} is inside the repository at {facts.key_repo} — "
+            f"role keys live outside every repo"
         )
     if facts.key_mode != KEY_MODE:
         return fail(

@@ -47,6 +47,7 @@ from my_team.credentials import (
     app_jwt_for,
     key_file,
     key_mode,
+    repo_containing,
 )
 from my_team.github_cli import GH, GhError, gh_json, run_gh
 
@@ -72,7 +73,7 @@ def probe(repo_root: Path, *, now: int) -> Facts:
         product_owner=_product_owner(config, repository, repo_root),
         repo=repo,
         protection=_protection(repo, repo_root),
-        roles=_roles(config, account, repository, repo_root, now=now),
+        roles=_roles(config, account, repository, now=now),
     )
 
 
@@ -245,7 +246,6 @@ def _roles(
     config: Config | Unavailable,
     account: str | Unavailable,
     repository: str | Unavailable,
-    repo_root: Path,
     *,
     now: int,
 ) -> Mapping[str, RoleFacts | Unavailable]:
@@ -253,8 +253,7 @@ def _roles(
         return dict.fromkeys(ROLE_NAMES, Unavailable("not checked — the config did not parse"))
     named = None if isinstance(repository, Unavailable) else repository
     return {
-        name: _role(getattr(config.roles, name), account, named, repo_root, now=now)
-        for name in ROLE_NAMES
+        name: _role(getattr(config.roles, name), account, named, now=now) for name in ROLE_NAMES
     }
 
 
@@ -262,13 +261,12 @@ def _role(
     role: RoleConfig,
     account: str | Unavailable,
     repository: str | None,
-    repo_root: Path,
     *,
     now: int,
 ) -> RoleFacts | Unavailable:
     path = key_file(role)
     mode = key_mode(path)
-    inside = path.resolve().is_relative_to(repo_root.resolve())
+    repo = repo_containing(path)
 
     def found(
         *,
@@ -282,14 +280,14 @@ def _role(
             declared=role,
             key_path=path,
             key_mode=mode,
-            key_inside_repo=inside,
+            key_repo=repo,
             app_slug=app_slug,
             installation=installation,
             installation_reaches_repo=installation_reaches_repo,
             bot_user_id=bot_user_id,
         )
 
-    if mode is None or inside or mode != KEY_MODE:
+    if mode is None or repo is not None or mode != KEY_MODE:
         return found()
 
     try:

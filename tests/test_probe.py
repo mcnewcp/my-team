@@ -308,7 +308,7 @@ def test_a_sound_role_reports_its_slug_installation_and_bot_user(
     )
     assert found.bot_user_id == 318751706
     assert found.key_mode == KEY_MODE
-    assert not found.key_inside_repo
+    assert found.key_repo is None
 
 
 def test_a_missing_key_is_reported_without_reaching_github(world: World, repo_root: Path) -> None:
@@ -332,13 +332,39 @@ def test_a_key_inside_the_target_repo_is_noticed(
 ) -> None:
     root = tmp_path / "inside"
     (root / ".my-team").mkdir(parents=True)
+    (root / ".git").mkdir()
     (root / ".my-team" / "config.toml").write_text(CONFIG.format(keys=root / ".my-team"))
     for name in ("implementer", "reviewer", "judge"):
         key = root / ".my-team" / f"{name}.pem"
         key.write_text(rsa_pem)
         key.chmod(KEY_MODE)
 
-    assert role(probed(root)).key_inside_repo
+    assert role(probed(root)).key_repo == root
+
+
+def test_a_key_inside_some_other_repo_is_noticed_too(
+    world: World, repo_root: Path, tmp_path: Path
+) -> None:
+    # The target repo is the one repo a key is obviously not allowed in, and it is not
+    # the only one: a key under any clone on the machine is a key something can stage.
+    elsewhere = tmp_path / "keys"
+    (elsewhere / ".git").mkdir()
+
+    found = role(probed(repo_root))
+
+    assert found.key_repo == elsewhere
+    assert status_of(probed(repo_root), "role implementer") is Status.FAIL
+
+
+def test_a_key_in_the_wrong_place_is_reported_without_reaching_github(
+    world: World, repo_root: Path, tmp_path: Path
+) -> None:
+    (tmp_path / "keys" / ".git").mkdir()
+    world.api_calls.clear()
+
+    probed(repo_root)
+
+    assert not world.api_calls, "a key that must not be used is never signed with"
 
 
 def test_a_key_github_refuses_leaves_the_role_unproven(world: World, repo_root: Path) -> None:

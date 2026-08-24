@@ -26,6 +26,7 @@ from my_team.credentials import (
     key_file,
     key_mode,
     read_private_key,
+    repo_containing,
     token_env,
 )
 
@@ -44,6 +45,16 @@ def a_key(tmp_path: Path, body: str, *, mode: int = KEY_MODE) -> Path:
     path.write_text(body)
     path.chmod(mode)
     return path
+
+
+def a_repo(root: Path, marker: str = "") -> Path:
+    """A work tree at `root`, marked the way git marks one."""
+    root.mkdir(parents=True, exist_ok=True)
+    if marker:
+        (root / ".git").write_text(marker)
+    else:
+        (root / ".git").mkdir()
+    return root
 
 
 def role_with_key(path: Path) -> RoleConfig:
@@ -111,6 +122,87 @@ def test_a_key_that_is_not_0600_is_refused_rather_than_merely_reported(
     # cannot quietly use a world-readable key.
     with pytest.raises(CredentialError, match=f"{mode:04o}"):
         read_private_key(a_key(tmp_path, rsa_pem, mode=mode))
+
+
+def test_a_key_outside_every_repository_sits_in_none(tmp_path: Path) -> None:
+    assert repo_containing(tmp_path / "keys" / "implementer.pem") is None
+
+
+def test_a_key_under_a_repository_names_the_work_tree_it_is_in(tmp_path: Path) -> None:
+    root = a_repo(tmp_path / "clone")
+
+    assert repo_containing(root / ".my-team" / "implementer.pem") == root
+
+
+def test_a_linked_worktree_is_a_repository_too(tmp_path: Path) -> None:
+    # A `git worktree` — and a submodule — carries `.git` as a *file* pointing at the
+    # real directory. Both stage a key just as readily, so what is there is what counts
+    # rather than whether it is a directory.
+    root = a_repo(tmp_path / "worktree", marker="gitdir: /elsewhere/.git/worktrees/w\n")
+
+    assert repo_containing(root / "keys" / "judge.pem") == root
+
+
+def test_the_nearest_enclosing_repository_is_the_one_named(tmp_path: Path) -> None:
+    outer = a_repo(tmp_path / "outer")
+    inner = a_repo(outer / "vendor" / "inner", marker="gitdir: ../../.git/modules/inner\n")
+
+    assert repo_containing(inner / "reviewer.pem") == inner
+
+
+def test_a_key_symlinked_into_a_repository_is_inside_it(tmp_path: Path) -> None:
+    # The file `git add .` would stage is the one at the end of the link, so the link is
+    # followed before the question is asked.
+    root = a_repo(tmp_path / "clone")
+    (root / "implementer.pem").write_text("-----BEGIN RSA PRIVATE KEY-----")
+    outside = tmp_path / "implementer.pem"
+    outside.symlink_to(root / "implementer.pem")
+
+    assert repo_containing(outside) == root
+
+
+def test_a_key_behind_a_directory_that_will_not_open_is_inside_no_repository(
+    tmp_path: Path,
+) -> None:
+    # Looking for a `.git` means stat'ing inside, and a directory that refuses answers
+    # with an error rather than with a "no". `doctor` asks before it knows whether there
+    # is a key there at all, so the error has to become the answer.
+    closed = tmp_path / "closed"
+    closed.mkdir(mode=0o600)
+    try:
+        assert repo_containing(closed / "implementer.pem") is None
+    finally:
+        closed.chmod(0o700)
+
+
+def test_a_key_inside_a_repository_is_refused_even_at_0600(tmp_path: Path, rsa_pem: str) -> None:
+    # No file mode prevents what is wrong with it: a key inside a work tree is one
+    # `git add .` from being published. `doctor` reports it; this is the refusal.
+    root = a_repo(tmp_path / "clone")
+
+    with pytest.raises(CredentialError, match="outside every repo"):
+        read_private_key(a_key(root, rsa_pem))
+
+
+def test_a_key_inside_a_repository_that_doctor_never_saw_is_refused_all_the_same(
+    tmp_path: Path, rsa_pem: str
+) -> None:
+    # `doctor` runs in one repo; this key is under another. Both are work trees, and the
+    # invariant is outside *every* repo rather than outside the one being diagnosed.
+    other = a_repo(tmp_path / "some-other-clone")
+
+    with pytest.raises(CredentialError, match=str(other)):
+        read_private_key(a_key(other, rsa_pem))
+
+
+def test_a_key_inside_a_repository_is_refused_by_location_before_its_mode(
+    tmp_path: Path, rsa_pem: str
+) -> None:
+    # Both are wrong, and only one of them `chmod` fixes.
+    root = a_repo(tmp_path / "clone")
+
+    with pytest.raises(CredentialError, match="outside every repo"):
+        read_private_key(a_key(root, rsa_pem, mode=0o644))
 
 
 @pytest.mark.parametrize("mode", [0o600, 0o700])

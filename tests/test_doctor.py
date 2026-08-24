@@ -83,7 +83,7 @@ def a_role(name: str = "implementer", **overrides: Any) -> RoleFacts:
         "declared": declared,
         "key_path": Path(f"/home/mcnewcp/.config/my-team/keys/{name}.pem"),
         "key_mode": 0o600,
-        "key_inside_repo": False,
+        "key_repo": None,
         "app_slug": f"{name}-my-team",
         "installation": an_installation(name),
         "installation_reaches_repo": True,
@@ -326,13 +326,22 @@ def test_a_key_that_is_not_0600_fails_and_names_the_mode(mode: int) -> None:
     assert f"{mode:04o}" in finding.detail
 
 
-def test_a_key_inside_the_target_repo_fails_even_at_0600() -> None:
-    # A key inside the repo is one `git add .` from being published, which no file mode
-    # prevents, so it is reported ahead of the mode.
-    finding = find(broken("judge", key_inside_repo=True), "role judge")
+def test_a_key_inside_a_repository_fails_even_at_0600() -> None:
+    # A key inside a work tree is one `git add .` from being published, which no file
+    # mode prevents, so it is reported ahead of the mode.
+    finding = find(broken("judge", key_repo=Path("/home/mcnewcp/code/my-team")), "role judge")
 
     assert finding.status is Status.FAIL
     assert "outside every repo" in finding.detail
+
+
+def test_a_key_inside_a_repository_names_the_one_it_is_in() -> None:
+    # Which clone it is in is what tells a key put in the wrong place from a `key_path`
+    # that points somewhere nobody meant.
+    elsewhere = Path("/home/mcnewcp/code/somewhere-else")
+    finding = find(broken("judge", key_repo=elsewhere), "role judge")
+
+    assert str(elsewhere) in finding.detail
 
 
 def test_a_key_that_does_not_authenticate_as_its_app_fails() -> None:

@@ -186,7 +186,7 @@ def _role_facts(name: str, declared: RoleConfig) -> RoleFacts:
         declared=declared,
         key_path=declared.key_path,
         key_mode=KEY_MODE,
-        key_inside_repo=False,
+        key_repo=None,
         app_slug=f"{name}-my-team",
         installation=InstallationFacts(suspended=False, permissions=ROLE_PERMISSIONS[name]),
         installation_reaches_repo=True,
