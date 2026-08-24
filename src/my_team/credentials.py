@@ -12,8 +12,8 @@ for a dispatched agent to stage by accident. `read_private_key` refuses any othe
 rather than merely reporting it — `doctor` is the diagnosis, and this is the refusal.
 
 ⚠️ A risk accepted knowingly and recorded rather than papered over: a dispatched agent
-runs as the same OS user, so it *can* read these keys. The Apps sit on repos the owner
-controls and revocation takes seconds.
+runs as the same OS user, so it *can* read these keys. The Apps sit on repos the
+product owner controls and revocation takes seconds.
 """
 
 from __future__ import annotations
