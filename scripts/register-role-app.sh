@@ -375,75 +375,6 @@ config_block() {
   printf 'key_path        = "%s/%s.pem"\n'  "$shown" "$role"
 }
 
-# Sourcing with MT_WIZARD_LIB=1 defines the functions above and stops here, so a test
-# can check the config blocks this emits without driving a browser.
-if [[ -n "${MT_WIZARD_LIB:-}" ]]; then return 0 2>/dev/null || exit 0; fi
-
-# ── Prelude: which roles, and which of them are already registered? ───────
-# This runs before the banner because it decides how many stages there are.
-_clear
-printf '\n%s%s  my-team — register the per-role GitHub Apps%s\n\n' "$BOLD" "$BLUE" "$RESET"
-printf '  %sWhich role?%s %s[all | %s]%s ' \
-  "$BOLD" "$RESET" "$DIM" "${ROSTER// / | }" "$RESET"
-read -r ANSWER || true
-ANSWER="${ANSWER:-all}"
-
-if [[ "$ANSWER" == "all" ]]; then
-  ROLES="$ROSTER"
-elif role_permissions "$ANSWER" >/dev/null; then
-  ROLES="$ANSWER"
-else
-  printf '\n'
-  warn "unknown role '$ANSWER' — the v0.1 roster is ${ROSTER// /, }."
-  printf '\n'
-  exit 1
-fi
-
-# Which repos the installation covers. Defaults to the repo you are standing in, since
-# that is the target repo; add the orchestrator repo too when the team is pointed at
-# its own source.
-DEFAULT_REPOS="${TARGET_REPOS:-$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)}"
-printf '\n  %sWhich repos should these Apps reach?%s %s[space-separated]%s\n' \
-  "$BOLD" "$RESET" "$DIM" "$RESET"
-printf '  %s[Enter keeps: %s]%s ' "$DIM" "${DEFAULT_REPOS:-none}" "$RESET"
-read -r TARGET_REPOS || true
-TARGET_REPOS="${TARGET_REPOS:-$DEFAULT_REPOS}"
-if [[ -z "$TARGET_REPOS" ]]; then
-  printf '\n'
-  warn "no repos named — the Apps would be installed on nothing."
-  printf '\n'
-  exit 1
-fi
-
-mkdir -p "$KEY_DIR"
-chmod 700 "$CONFIG_DIR" "$KEY_DIR"
-
-# Re-sync: an App already registered for a role only needs the verify stage, which
-# re-reads every id from the App itself and re-checks the key it will be used with. App
-# names are editable, so a stored slug goes stale on every rename — this is the repair
-# path, not just a re-check.
-RESYNC_ROLES=""
-TOTAL_STAGES=1                       # the closing config-block stage
-for _role in $ROLES; do
-  _known=$(_value_in "$CONFIG_DIR/$_role.env" APP_ID || true)
-  if [[ -n "$_known" ]]; then
-    printf '\n'
-    note "'$_role' is already registered — App ID $_known, key $KEY_DIR/$_role.pem"
-    if confirm "Re-sync it (re-read its ids) instead of registering a new App?"; then
-      RESYNC_ROLES="$RESYNC_ROLES $_role"
-      TOTAL_STAGES=$((TOTAL_STAGES + 1))
-      continue
-    fi
-  fi
-  TOTAL_STAGES=$((TOTAL_STAGES + 4))
-done
-
-banner "my-team — $(printf '%s' "$ROLES" | tr ' ' ',')"
-note "ids → $CONFIG_DIR/<role>.env   keys → $KEY_DIR/<role>.pem"
-note "Budget ~6–8 minutes per role. Nothing here expires: private keys do not, and"
-note "the ids are numeric, so renaming an App later changes none of them."
-pause "Press Enter to begin."
-
 # ── One role, four stages ─────────────────────────────────────────────────
 provision_role() {
   local role="$1" resync="$2"
@@ -692,6 +623,77 @@ verify_role() {
   fi
   pause
 }
+
+# Sourcing with MT_WIZARD_LIB=1 defines every function above and stops here, so a test
+# can drive a stage, or ask for a config block, without a browser. Everything below is
+# the run itself — the questions it opens with, and the loop over roles — which is why
+# the stages are defined above a line that has nothing but top-level code beneath it.
+if [[ -n "${MT_WIZARD_LIB:-}" ]]; then return 0 2>/dev/null || exit 0; fi
+
+# ── Prelude: which roles, and which of them are already registered? ───────
+# This runs before the banner because it decides how many stages there are.
+_clear
+printf '\n%s%s  my-team — register the per-role GitHub Apps%s\n\n' "$BOLD" "$BLUE" "$RESET"
+printf '  %sWhich role?%s %s[all | %s]%s ' \
+  "$BOLD" "$RESET" "$DIM" "${ROSTER// / | }" "$RESET"
+read -r ANSWER || true
+ANSWER="${ANSWER:-all}"
+
+if [[ "$ANSWER" == "all" ]]; then
+  ROLES="$ROSTER"
+elif role_permissions "$ANSWER" >/dev/null; then
+  ROLES="$ANSWER"
+else
+  printf '\n'
+  warn "unknown role '$ANSWER' — the v0.1 roster is ${ROSTER// /, }."
+  printf '\n'
+  exit 1
+fi
+
+# Which repos the installation covers. Defaults to the repo you are standing in, since
+# that is the target repo; add the orchestrator repo too when the team is pointed at
+# its own source.
+DEFAULT_REPOS="${TARGET_REPOS:-$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)}"
+printf '\n  %sWhich repos should these Apps reach?%s %s[space-separated]%s\n' \
+  "$BOLD" "$RESET" "$DIM" "$RESET"
+printf '  %s[Enter keeps: %s]%s ' "$DIM" "${DEFAULT_REPOS:-none}" "$RESET"
+read -r TARGET_REPOS || true
+TARGET_REPOS="${TARGET_REPOS:-$DEFAULT_REPOS}"
+if [[ -z "$TARGET_REPOS" ]]; then
+  printf '\n'
+  warn "no repos named — the Apps would be installed on nothing."
+  printf '\n'
+  exit 1
+fi
+
+mkdir -p "$KEY_DIR"
+chmod 700 "$CONFIG_DIR" "$KEY_DIR"
+
+# Re-sync: an App already registered for a role only needs the verify stage, which
+# re-reads every id from the App itself and re-checks the key it will be used with. App
+# names are editable, so a stored slug goes stale on every rename — this is the repair
+# path, not just a re-check.
+RESYNC_ROLES=""
+TOTAL_STAGES=1                       # the closing config-block stage
+for _role in $ROLES; do
+  _known=$(_value_in "$CONFIG_DIR/$_role.env" APP_ID || true)
+  if [[ -n "$_known" ]]; then
+    printf '\n'
+    note "'$_role' is already registered — App ID $_known, key $KEY_DIR/$_role.pem"
+    if confirm "Re-sync it (re-read its ids) instead of registering a new App?"; then
+      RESYNC_ROLES="$RESYNC_ROLES $_role"
+      TOTAL_STAGES=$((TOTAL_STAGES + 1))
+      continue
+    fi
+  fi
+  TOTAL_STAGES=$((TOTAL_STAGES + 4))
+done
+
+banner "my-team — $(printf '%s' "$ROLES" | tr ' ' ',')"
+note "ids → $CONFIG_DIR/<role>.env   keys → $KEY_DIR/<role>.pem"
+note "Budget ~6–8 minutes per role. Nothing here expires: private keys do not, and"
+note "the ids are numeric, so renaming an App later changes none of them."
+pause "Press Enter to begin."
 
 for ROLE in $ROLES; do
   RESYNC=0

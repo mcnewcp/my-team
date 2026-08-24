@@ -1,11 +1,15 @@
 """The provisioning wizard, at the one seam a test can hold it to.
 
-Almost all of `scripts/register-role-app.sh` is browser choreography, which no test can
-reach. Two parts are not: what it will call a role key, and the config blocks it ends
-with. Those blocks are the whole point of the wizard — the ids GitHub shows once, in the
-shape the parser accepts — and they are also what silently rots when the config model
-moves, or when a run that failed halfway leaves ids behind. So the wizard is run in
-library mode, asked for its blocks, and the blocks are handed to `parse_config`.
+`scripts/register-role-app.sh` is mostly browser choreography, and the pages it walks a
+human through are not a thing to assert on. What is: the config blocks it ends with —
+the ids GitHub shows once, in the shape the parser accepts — and the two facts they are
+gated on, that the key on disk is one the loop will read and that a run proved the ids
+in this run rather than some earlier one. Those rot silently when the config model
+moves, or when a run that failed halfway leaves ids behind.
+
+So the script is sourced in library mode, which defines every function and stops before
+the prelude. Stages are driven from there like any other function, over a `$HOME` the
+test owns, and the file each one leaves behind is what is asserted on.
 """
 
 from __future__ import annotations
@@ -32,19 +36,25 @@ pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="the wizard
 
 
 def run_wizard(
-    home: Path, script: str, *, path: str = "/usr/bin:/bin"
+    home: Path, script: str, *, path: str = "/usr/bin:/bin", stdin: str = ""
 ) -> subprocess.CompletedProcess[str]:
-    """Source the wizard for its functions alone, then run `script` against them."""
+    """Source the wizard for its functions alone, then run `script` against them.
+
+    `stdin` is always a pipe, never the terminal the suite was started from: the stages
+    ask the human questions, and one that reached a real terminal would hang the run
+    rather than fail it.
+    """
     return subprocess.run(
         ["bash", "-c", f"source {WIZARD}\n{script}"],
         capture_output=True,
         text=True,
+        input=stdin,
         env={"HOME": str(home), "MT_WIZARD_LIB": "1", "PATH": path},
     )
 
 
-def wizard(home: Path, script: str, *, path: str = "/usr/bin:/bin") -> str:
-    result = run_wizard(home, script, path=path)
+def wizard(home: Path, script: str, *, path: str = "/usr/bin:/bin", stdin: str = "") -> str:
+    result = run_wizard(home, script, path=path, stdin=stdin)
     assert result.returncode == 0, result.stderr
     return result.stdout
 
@@ -391,24 +401,49 @@ def test_clearing_a_value_from_a_file_that_is_not_there_is_not_an_error(tmp_path
     assert succeeds(tmp_path, f"ENV_FILE={tmp_path}/absent.env\nclear_env VERIFIED")
 
 
-def test_verification_state_is_invalidated_before_anything_can_return() -> None:
+def test_a_verify_run_that_returns_early_leaves_no_verdict_standing(
+    tmp_path: Path, real_key: str
+) -> None:
     """The verify stage returns early in five places, and none of them unwinds a write.
 
-    So the marker `config_block` gates on has to be dropped before the first of those
-    can fire — otherwise a run that failed halfway leaves the previous run's verdict
-    standing over ids nothing re-proved. Asserted over the source because the failure is
-    silent and the mistake is one line in the wrong place.
+    So the marker has to be dropped before the first of those can fire — otherwise a run
+    that got halfway leaves the previous run's verdict standing over ids nothing
+    re-proved. Driven here through the first of those returns, the one that needs no
+    network: a role a previous run verified, whose key has since slipped off 0600.
     """
-    body = WIZARD.read_text().partition("\nverify_role() {")[2].partition("\n}\n")[0]
-    statements = [line.strip() for line in body.splitlines() if not line.strip().startswith("#")]
+    provisioned(tmp_path, real_key, "judge")
+    key = keys(tmp_path) / "judge.pem"
+    key.chmod(0o644)
+    recorded = tmp_path / ".config" / "my-team" / "judge.env"
 
-    assert "clear_env VERIFIED" in statements, "verify_role must invalidate the earlier verdict"
-    assert statements.index("clear_env VERIFIED") < next(
-        index for index, line in enumerate(statements) if "return" in line
+    wizard(tmp_path, f"ENV_FILE={recorded}\nPEM_PATH={key}\nverify_role judge")
+
+    assert "VERIFIED" not in recorded.read_text(), "the earlier verdict is gone"
+    assert "APP_ID=4652145" in recorded.read_text(), "and the ids it left are untouched"
+    assert only_a_comment(wizard(tmp_path, "config_block judge || true"), "judge")
+
+
+def test_the_key_the_wizard_stores_is_one_the_loop_will_read(tmp_path: Path, real_key: str) -> None:
+    """Two places state the mode — the key stage writes it, `doctor` reads it — and a
+    re-sync never re-downloads the key, so the stage is the only place it is written.
+    So the download is walked through that stage and what it leaves behind is handed to
+    both readers. `open_url` is the one thing stubbed out: it drives a browser.
+    """
+    downloaded = tmp_path / "Downloads" / "judge-my-team.2026-08-24.private-key.pem"
+    downloaded.parent.mkdir()
+    downloaded.write_text(real_key)
+    downloaded.chmod(0o644)
+    stored = keys(tmp_path) / "judge.pem"
+    stored.parent.mkdir(parents=True)
+
+    wizard(
+        tmp_path,
+        "open_url() { :; }\n"
+        f'SRC_PEM=""\nAPP_SLUG=judge-my-team\nPEM_PATH={stored}\nstore_key judge',
+        # Enter at "Downloaded?", y at "Use that one?", Enter at the closing pause.
+        stdin="\ny\n\n",
     )
 
-
-def test_the_wizard_stores_keys_at_the_mode_the_config_model_requires() -> None:
-    # Two places state the mode — the wizard writes it and `doctor` checks it — so this
-    # binds the writer to the constant the reader uses.
-    assert f"chmod {KEY_MODE:o}" in WIZARD.read_text()
+    assert key_mode(stored) == KEY_MODE, "the loop reads this as a role key"
+    assert succeeds(tmp_path, f"key_is_a_role_key {stored}"), "and so does the wizard"
+    assert not downloaded.exists(), "the download was moved rather than copied"
