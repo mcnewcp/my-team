@@ -210,7 +210,11 @@ def _api(path: str, jwt: str, *, method: str) -> Mapping[str, Any]:
         with urllib.request.urlopen(request, timeout=API_TIMEOUT_SECONDS) as response:
             payload = json.load(response)
     except urllib.error.HTTPError as error:
-        raise AppApiError(error.code, path, error.read().decode(errors="replace")) from error
+        try:
+            body = error.read().decode(errors="replace")
+        except (OSError, ValueError, http.client.HTTPException) as body_error:
+            body = f"GitHub's error response could not be read — {body_error}"
+        raise AppApiError(error.code, path, body) from error
     except urllib.error.URLError as error:
         raise CredentialError(f"{path}: could not reach GitHub — {error.reason}") from error
     except (OSError, ValueError, http.client.HTTPException) as error:

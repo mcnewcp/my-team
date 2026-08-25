@@ -300,6 +300,31 @@ def test_a_refusal_keeps_its_status_so_a_404_can_be_told_from_an_outage(
     assert "Not Found" in str(caught.value)
 
 
+def test_a_refusal_with_a_truncated_body_keeps_its_status_and_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class TruncatedErrorBody(Response):
+        def read(self, *_: object) -> bytes:
+            raise http.client.IncompleteRead(b"{")
+
+    def refuse(*_: object, **__: object) -> None:
+        raise urllib.error.HTTPError(
+            url="https://api.github.com/app",
+            code=503,
+            msg="Service Unavailable",
+            hdrs=None,  # type: ignore[arg-type]
+            fp=TruncatedErrorBody(b""),
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+
+    with pytest.raises(AppApiError) as caught:
+        app_get("a.b.c", "/app")
+
+    assert caught.value.status == 503
+    assert caught.value.path == "/app"
+
+
 def test_an_unreachable_github_is_an_error_about_the_run_not_about_the_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
