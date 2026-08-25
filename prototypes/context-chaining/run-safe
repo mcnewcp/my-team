@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if (( $# == 0 )); then
+  printf 'usage: %s <python-script> [args...]\n' "$0" >&2
+  exit 2
+fi
+
+exec env -u CODEX_API_KEY -u ANTHROPIC_API_KEY \
+  uv run --frozen python "$@"

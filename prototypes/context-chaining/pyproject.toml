@@ -1,0 +1,11 @@
+[project]
+name = "context-chaining-prototype"
+version = "0.0.0"
+description = "Throwaway dual-Harness context-chaining experiment"
+requires-python = ">=3.13"
+dependencies = [
+    "claude-agent-sdk==0.2.144",
+]
+
+[tool.uv]
+package = false
