@@ -345,7 +345,6 @@ async def run_claude(
                 prompt = cycle_prompt(cycle)
                 trace.write("client.query", {"cycle": cycle, "prompt": prompt})
                 await client.query(prompt)
-                request_usages: list[dict[str, Any]] = []
                 result: ResultMessage | None = None
                 async for message in client.receive_response():
                     trace.write("server.receive", message)
@@ -353,8 +352,6 @@ async def run_claude(
                         init_model = message.data.get("model")
                     elif isinstance(message, AssistantMessage):
                         assistant_model = message.model
-                        if message.usage:
-                            request_usages.append(dict(message.usage))
                     elif isinstance(message, ResultMessage):
                         result = message
                 if result is None:
@@ -367,8 +364,13 @@ async def run_claude(
                     raise RuntimeError(
                         f"Claude cycle {cycle} attempted denied tools: {result.permission_denials}"
                     )
-                if not request_usages:
-                    raise RuntimeError(f"Claude cycle {cycle} had no per-request usage")
+                result_usage = result.usage or {}
+                iterations = result_usage.get("iterations")
+                if not isinstance(iterations, list) or not iterations:
+                    raise RuntimeError(
+                        f"Claude cycle {cycle} ResultMessage had no iteration usage"
+                    )
+                request_usages = [dict(usage) for usage in iterations]
                 context_usage = await client.get_context_usage()
                 trace.write("client.get_context_usage", {"cycle": cycle, **context_usage})
                 for request_index, usage in enumerate(request_usages, start=1):
@@ -426,6 +428,11 @@ async def run_claude(
                     "standalone_cli": command_output("claude", "--version"),
                 },
                 "auth": auth,
+                "usage_source": "ResultMessage.usage.iterations",
+                "usage_note": (
+                    "Per-request arithmetic uses terminal ResultMessage iterations; "
+                    "AssistantMessage envelopes remain raw trace observations only."
+                ),
                 "effective": {
                     "model": latest.get("model") or init_model or assistant_model,
                     "init_model": init_model,

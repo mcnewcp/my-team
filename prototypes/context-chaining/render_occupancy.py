@@ -8,6 +8,7 @@ from __future__ import annotations
 import html
 import json
 import subprocess
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,102 @@ PLOT = ROOT / "evidence" / "m1-occupancy.svg"
 
 def command_output(*argv: str) -> str:
     return subprocess.run(argv, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def first_crossing(
+    observations: list[dict[str, Any]], field: str, target: int
+) -> dict[str, Any] | None:
+    for observation in observations:
+        value = observation.get(field)
+        if isinstance(value, int) and value >= target:
+            return {"at": observation["at"], "cycle": observation["cycle"], "value": value}
+    return None
+
+
+def rederive_legacy_claude_usage(summary: dict[str, Any]) -> dict[str, Any]:
+    """Use ResultMessage iterations when an older run counted duplicate SDK envelopes."""
+    if summary["claude"].get("usage_source"):
+        return summary
+
+    trace_path = ROOT / summary["claude"]["trace"]
+    current_cycle: int | None = None
+    iterations_by_cycle: dict[int, list[dict[str, Any]]] = {}
+    context_by_cycle: dict[int, tuple[str, dict[str, Any]]] = {}
+    with trace_path.open(encoding="utf-8") as stream:
+        for line in stream:
+            event = json.loads(line)
+            source = event["source"]
+            payload = event["payload"]
+            if source == "client.query":
+                current_cycle = int(payload["cycle"])
+            elif source == "server.receive" and payload.get("subtype") == "success":
+                iterations = (payload.get("usage") or {}).get("iterations")
+                if current_cycle is not None and isinstance(iterations, list):
+                    iterations_by_cycle[current_cycle] = iterations
+            elif source == "client.get_context_usage":
+                cycle = int(payload["cycle"])
+                context_by_cycle[cycle] = (event["at"], payload)
+
+    observations: list[dict[str, Any]] = []
+    cumulative_billed_input = 0
+    for cycle in sorted(context_by_cycle):
+        at, context_usage = context_by_cycle[cycle]
+        iterations = iterations_by_cycle.get(cycle)
+        if not iterations:
+            raise RuntimeError(f"Claude raw trace has no ResultMessage iteration for cycle {cycle}")
+        for request_index, usage in enumerate(iterations, start=1):
+            request_input = sum(
+                int(usage.get(field, 0))
+                for field in (
+                    "input_tokens",
+                    "cache_creation_input_tokens",
+                    "cache_read_input_tokens",
+                )
+            )
+            cumulative_billed_input += request_input
+            observations.append(
+                {
+                    "at": at,
+                    "cycle": cycle,
+                    "request": request_index,
+                    "context_total_tokens": int(context_usage["totalTokens"]),
+                    "request_input_tokens": request_input,
+                    "request_uncached_input_tokens": int(usage.get("input_tokens", 0)),
+                    "request_cache_creation_input_tokens": int(
+                        usage.get("cache_creation_input_tokens", 0)
+                    ),
+                    "request_cache_read_input_tokens": int(
+                        usage.get("cache_read_input_tokens", 0)
+                    ),
+                    "request_output_tokens": int(usage.get("output_tokens", 0)),
+                    "cumulative_billed_input_tokens": cumulative_billed_input,
+                    "model": context_usage.get("model"),
+                    "max_tokens": context_usage.get("maxTokens"),
+                    "raw_max_tokens": context_usage.get("rawMaxTokens"),
+                    "auto_compact_enabled": context_usage.get("isAutoCompactEnabled"),
+                    "auto_compact_threshold": context_usage.get("autoCompactThreshold"),
+                }
+            )
+
+    normalized = deepcopy(summary)
+    claude = normalized["claude"]
+    claude["usage_source"] = "ResultMessage.usage.iterations (re-derived from raw trace)"
+    claude["usage_note"] = (
+        "The SDK emitted two AssistantMessage envelopes with identical usage for each API "
+        "iteration in the captured run; those repeated envelopes remain in the raw trace but "
+        "are not double-counted as requests."
+    )
+    claude["observations"] = observations
+    target = int(normalized["target_tokens"])
+    claude["crossings"] = {
+        name: first_crossing(observations, field, target)
+        for name, field in (
+            ("context_total", "context_total_tokens"),
+            ("request_input", "request_input_tokens"),
+            ("cumulative_billed_input", "cumulative_billed_input_tokens"),
+        )
+    }
+    return normalized
 
 
 def points(
@@ -222,6 +319,8 @@ cd prototypes/context-chaining
 
 The runner opened one ephemeral session per Harness from the same empty temporary directory. Each cycle embedded the same repository bytes in the same order and required the same compact comparison. Codex ran with `approvalPolicy=never`, a read-only sandbox, empty explicit instructions, and no discovered instruction sources. Claude ran with no tools and no setting sources. Every client request, server event, direct-usage response, timestamp, source, and full raw payload was appended to local JSONL.
 
+Claude per-request input arithmetic came from `{claude["usage_source"]}`. {claude.get("usage_note", "AssistantMessage envelopes remain raw trace observations only.")}
+
 A sharp occupancy drop was defined before the run as both at least `{summary["compaction_drop_rule"]["minimum_tokens"]:,}` tokens and at least `{summary["compaction_drop_rule"]["minimum_fraction"]:.0%}` of the prior direct observation.
 
 ## Expected observation
@@ -274,6 +373,7 @@ def main() -> None:
     summary: dict[str, Any] = json.loads(SUMMARY.read_text())
     if not summary.get("codex") or not summary.get("claude"):
         raise SystemExit("both Harness observations are required before rendering M1 evidence")
+    summary = rederive_legacy_claude_usage(summary)
     PLOT.write_text(render_plot(summary))
     EVIDENCE.write_text(render_markdown(summary))
     print(f"wrote {PLOT.relative_to(ROOT)}")
