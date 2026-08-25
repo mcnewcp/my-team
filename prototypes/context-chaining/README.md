@@ -50,6 +50,24 @@ The desired v0.1 Smart-zone boundary is 200,000 tokens, but milestone runners mu
 arbitrary positive count so mechanics can be exercised cheaply. This setup does not claim that
 either Harness can reach the default before automatic compaction.
 
+## M1 — current-context occupancy
+
+`occupancy.py` opens one ephemeral session per Harness and repeats the same read-only payload until
+the direct context signal crosses a configured absolute count, a sharp occupancy drop indicates
+compaction, or the cycle limit is reached. The files are embedded into each prompt so the payload
+is byte-for-byte comparable and model-side tools remain disabled. It records full raw payloads
+under `local/traces/` and a local derived summary, without changing persistent Harness settings.
+
+From this directory:
+
+```sh
+./run-safe occupancy.py --target 200000 --max-cycles 40
+./run-safe render_occupancy.py
+```
+
+The renderer writes the sanitized report and SVG plot under `evidence/`. Review M1 before adding
+interruption, Handoff, continuation, or skill-dispatch behavior.
+
 Running `workload.md` sends the listed repository files to the selected model service. Preparing
 the workload does not authorize that transfer; obtain the Product Owner's explicit approval before
 a milestone runner executes it against a private repository.
