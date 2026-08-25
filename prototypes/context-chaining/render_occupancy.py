@@ -167,7 +167,7 @@ def panel(
         f'<text x="{x0 + width + 8}" y="{y0 + height}" class="axis">0</text>',
         f'<text x="{x0 + width / 2}" y="{y0 + height + 25}" class="axis" text-anchor="middle">session observations</text>',
     ]
-    legend_x = x0
+    legend_index = 0
     for label, field, color in left_series:
         path = points(
             observations,
@@ -179,10 +179,12 @@ def panel(
             maximum=left_max,
         )
         elements.append(f'<polyline points="{path}" style="stroke:{color}" class="series"/>')
+        legend_x = x0 + 400 * (legend_index % 2)
+        legend_y = y0 + height + 48 + 22 * (legend_index // 2)
         elements.append(
-            f'<text x="{legend_x}" y="{y0 + height + 48}" style="fill:{color}" class="legend">{html.escape(label)}</text>'
+            f'<text x="{legend_x}" y="{legend_y}" style="fill:{color}" class="legend">{html.escape(label)}</text>'
         )
-        legend_x += 190
+        legend_index += 1
     for label, field, color in right_series:
         path = points(
             observations,
@@ -196,10 +198,12 @@ def panel(
         elements.append(
             f'<polyline points="{path}" style="stroke:{color}" class="series cumulative"/>'
         )
+        legend_x = x0 + 400 * (legend_index % 2)
+        legend_y = y0 + height + 48 + 22 * (legend_index // 2)
         elements.append(
-            f'<text x="{legend_x}" y="{y0 + height + 48}" style="fill:{color}" class="legend">{html.escape(label)} (right axis)</text>'
+            f'<text x="{legend_x}" y="{legend_y}" style="fill:{color}" class="legend">{html.escape(label)} (right axis)</text>'
         )
-        legend_x += 245
+        legend_index += 1
     return "\n".join(elements)
 
 
