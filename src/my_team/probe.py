@@ -139,15 +139,30 @@ def _repo(repository: str | Unavailable, repo_root: Path) -> RepoFacts | Unavail
     try:
         return RepoFacts(
             name_with_owner=repository,
-            default_branch=data["default_branch"],
-            allow_squash_merge=bool(data["allow_squash_merge"]),
-            allow_merge_commit=bool(data["allow_merge_commit"]),
-            allow_rebase_merge=bool(data["allow_rebase_merge"]),
-            delete_branch_on_merge=bool(data["delete_branch_on_merge"]),
+            default_branch=_field(data, "default_branch", str),
+            allow_squash_merge=_field(data, "allow_squash_merge", bool),
+            allow_merge_commit=_field(data, "allow_merge_commit", bool),
+            allow_rebase_merge=_field(data, "allow_rebase_merge", bool),
+            delete_branch_on_merge=_field(data, "delete_branch_on_merge", bool),
             labels=_labels(repository, repo_root),
         )
     except (KeyError, TypeError) as error:
         return Unavailable(f"{repository}: GitHub described the repo unrecognisably — {error}")
+
+
+def _field[T](data: Any, name: str, kind: type[T]) -> T:
+    """One field of the repo response, or the error a missing one already raises.
+
+    A `200` is not a description: GitHub can answer with the field null, and coercing
+    that is the failure. `bool(None)` is `False`, which reports a merge policy nobody
+    set, and `quote(None)` is a traceback out of the one command whose whole job is
+    naming the unmet precondition. Absent and unrecognisable are one diagnosis, so this
+    raises what the caller already catches rather than adding a second way to fail.
+    """
+    value = data[name]
+    if not isinstance(value, kind):
+        raise TypeError(f"`{name}` is {value!r}")
+    return value
 
 
 def _labels(repository: str, repo_root: Path) -> tuple[str, ...] | Unavailable:

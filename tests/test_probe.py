@@ -833,6 +833,35 @@ def test_a_repo_that_is_not_a_table_is_reported(world: World, repo_root: Path) -
     assert isinstance(probed(repo_root).repo, Unavailable)
 
 
+def test_a_repo_with_a_null_default_branch_is_reported_rather_than_crashing(
+    world: World, repo_root: Path
+) -> None:
+    # A 200 whose fields are null is not a repo GitHub described — read as one it reaches
+    # `quote(None)` and the command whose job is naming the unmet precondition ends in a
+    # traceback instead. Protection is advisory, so it goes unread and never blocks.
+    world.gh[f"api repos/{REPO}"] = json.dumps({**REPO_PAYLOAD, "default_branch": None})
+    facts = probed(repo_root)
+
+    assert isinstance(facts.repo, Unavailable)
+    assert "default_branch" in facts.repo.reason
+    assert status_of(facts, "merge policy") is Status.FAIL
+    assert isinstance(facts.protection, Unavailable)
+    assert status_of(facts, "protection") is Status.WARN
+
+
+def test_a_null_merge_flag_is_reported_rather_than_read_as_a_policy(
+    world: World, repo_root: Path
+) -> None:
+    # `bool(None)` is `False`, so a field GitHub left null would arrive as a merge policy
+    # someone has to go and fix — a confidently wrong answer, which is worse here than
+    # no answer at all.
+    world.gh[f"api repos/{REPO}"] = json.dumps({**REPO_PAYLOAD, "allow_squash_merge": None})
+    facts = probed(repo_root)
+
+    assert isinstance(facts.repo, Unavailable)
+    assert "allow_squash_merge" in facts.repo.reason
+
+
 def test_a_product_owner_who_is_not_a_collaborator_is_reported_by_login(
     world: World, repo_root: Path
 ) -> None:
