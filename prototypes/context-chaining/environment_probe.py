@@ -282,8 +282,7 @@ async def probe_codex(stamp: str, smoke_workspace: Path) -> dict[str, Any]:
 def claude_auth_status() -> dict[str, Any]:
     status: dict[str, Any] = json.loads(command_output("claude", "auth", "status", "--json"))
     sanitized = {
-        key: status.get(key)
-        for key in ("loggedIn", "authMethod", "apiProvider", "apiKeySource")
+        key: status.get(key) for key in ("loggedIn", "authMethod", "apiProvider", "apiKeySource")
     }
     if not sanitized["loggedIn"]:
         raise RuntimeError("Claude Code has no login when API-key variables are absent")
@@ -399,16 +398,17 @@ def markdown(report: dict[str, Any]) -> str:
 
     def literal(value: Any) -> str:
         return json.dumps(value, separators=(",", ":"))
+
     codex_versions = (
-        f'`{codex["cli_version"]}`; stable v2 `{bundles["stable_v2"]["sha256"]}`; '
-        f'experimental v2 `{bundles["experimental_v2"]["sha256"]}`'
+        f"`{codex['cli_version']}`; stable v2 `{bundles['stable_v2']['sha256']}`; "
+        f"experimental v2 `{bundles['experimental_v2']['sha256']}`"
     )
-    codex_auth_text = f'account type `{codex_auth["type"]}`, plan `{codex_auth["plan_type"]}`'
-    codex_model = f'`{codex["effective"]["model"]}` ({codex["effective"]["model_provider"]})'
+    codex_auth_text = f"account type `{codex_auth['type']}`, plan `{codex_auth['plan_type']}`"
+    codex_model = f"`{codex['effective']['model']}` ({codex['effective']['model_provider']})"
     codex_compaction = (
         "configured limit "
-        f'`{literal(codex["config"]["model_auto_compact_token_limit"])}`, '
-        f'scope `{literal(codex["config"]["model_auto_compact_token_limit_scope"])}`'
+        f"`{literal(codex['config']['model_auto_compact_token_limit'])}`, "
+        f"scope `{literal(codex['config']['model_auto_compact_token_limit_scope'])}`"
     )
     codex_row = " | ".join(
         (
@@ -416,32 +416,32 @@ def markdown(report: dict[str, Any]) -> str:
             codex_versions,
             codex_auth_text,
             codex_model,
-            f'`{codex["effective"]["model_context_window"]}`',
+            f"`{codex['effective']['model_context_window']}`",
             codex_compaction,
         )
     )
     claude_versions = (
-        f'SDK `{claude["sdk_version"]}`; bundled CLI `{claude["bundled_cli_version"]}`; '
-        f'standalone `{claude["standalone_cli_version"]}`'
+        f"SDK `{claude['sdk_version']}`; bundled CLI `{claude['bundled_cli_version']}`; "
+        f"standalone `{claude['standalone_cli_version']}`"
     )
     claude_auth_text = (
-        f'`{claude_auth["authMethod"]}` via `{claude_auth["apiProvider"]}`; '
-        f'API-key source `{literal(claude_auth["apiKeySource"])}`'
+        f"`{claude_auth['authMethod']}` via `{claude_auth['apiProvider']}`; "
+        f"API-key source `{literal(claude_auth['apiKeySource'])}`"
     )
     claude_window = (
-        f'effective `{claude["effective"]["max_tokens"]}`, '
-        f'raw `{claude["effective"]["raw_max_tokens"]}`'
+        f"effective `{claude['effective']['max_tokens']}`, "
+        f"raw `{claude['effective']['raw_max_tokens']}`"
     )
     claude_compaction = (
-        f'enabled `{literal(claude["effective"]["auto_compact_enabled"])}`, '
-        f'threshold `{literal(claude["effective"]["auto_compact_threshold"])}`'
+        f"enabled `{literal(claude['effective']['auto_compact_enabled'])}`, "
+        f"threshold `{literal(claude['effective']['auto_compact_threshold'])}`"
     )
     claude_row = " | ".join(
         (
             "Claude Code",
             claude_versions,
             claude_auth_text,
-            f'`{claude["effective"]["model"]}`',
+            f"`{claude['effective']['model']}`",
             claude_window,
             claude_compaction,
         )
