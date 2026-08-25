@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="760" viewBox="0 0 1000 760" role="img" aria-labelledby="title desc">
+<title id="title">M1 current-context occupancy observations</title>
+<desc id="desc">Codex and Claude direct occupancy candidates compared with per-request input and cumulative billing arithmetic.</desc>
+<style>
+  text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fill: #202124; }
+  .title { font-size: 18px; font-weight: 700; }
+  .axis, .small { font-size: 11px; }
+  .legend { font-size: 11px; font-weight: 700; }
+  .frame { fill: #fff; stroke: #aab2bd; }
+  .threshold { stroke: #d00000; stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .series { fill: none; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+  .cumulative { stroke-dasharray: 7 5; }
+</style>
+<rect width="1000" height="760" fill="#f7f7f5"/>
+<text x="40" y="35" class="title">M1 — live context occupancy vs billing usage</text>
+<text x="90" y="62" class="title">Codex app-server</text>
+<rect x="90" y="80" width="800" height="210" class="frame"/>
+<line x1="90" y1="81.0" x2="890" y2="81.0" class="threshold"/>
+<text x="96" y="76.0" class="small">Smart zone 200,000</text>
+<text x="82" y="85" class="axis" text-anchor="end">200,921</text>
+<text x="82" y="290" class="axis" text-anchor="end">0</text>
+<text x="898" y="85" class="axis">2,345,801</text>
+<text x="898" y="290" class="axis">0</text>
+<text x="490.0" y="315" class="axis" text-anchor="middle">session observations</text>
+<polyline points="90.0,267.8 130.0,257.3 170.0,247.9 210.0,238.4 250.0,229.1 290.0,219.8 330.0,210.4 370.0,201.1 410.0,191.8 450.0,182.4 490.0,173.1 530.0,163.8 570.0,154.5 610.0,145.2 650.0,135.9 690.0,126.6 730.0,117.2 770.0,107.9 810.0,98.6 850.0,89.3 890.0,80.0" style="stroke:#006d77" class="series"/>
+<text x="90" y="338" style="fill:#006d77" class="legend">last total (direct candidate)</text>
+<polyline points="90.0,270.1 130.0,258.2 170.0,248.6 210.0,239.3 250.0,229.8 290.0,220.5 330.0,211.1 370.0,201.8 410.0,192.4 450.0,183.1 490.0,173.8 530.0,164.5 570.0,155.1 610.0,145.8 650.0,136.5 690.0,127.2 730.0,117.9 770.0,108.6 810.0,99.3 850.0,90.0 890.0,80.6" style="stroke:#ee6c4d" class="series"/>
+<text x="490" y="338" style="fill:#ee6c4d" class="legend">last input</text>
+<polyline points="90.0,288.1 130.0,285.3 170.0,281.7 210.0,277.3 250.0,272.1 290.0,266.0 330.0,259.2 370.0,251.6 410.0,243.2 450.0,234.0 490.0,224.0 530.0,213.2 570.0,201.6 610.0,189.2 650.0,176.0 690.0,162.0 730.0,147.2 770.0,131.6 810.0,115.2 850.0,98.0 890.0,80.0" style="stroke:#6a4c93" class="series cumulative"/>
+<text x="90" y="360" style="fill:#6a4c93" class="legend">reported cumulative total (right axis)</text>
+<polyline points="90.0,288.1 130.0,285.3 170.0,281.7 210.0,277.3 250.0,272.1 290.0,266.0 330.0,259.2 370.0,251.6 410.0,243.2 450.0,234.0 490.0,224.0 530.0,213.2 570.0,201.6 610.0,189.2 650.0,176.0 690.0,162.0 730.0,147.2 770.0,131.6 810.0,115.2 850.0,98.0 890.0,80.0" style="stroke:#9c6644" class="series cumulative"/>
+<text x="490" y="360" style="fill:#9c6644" class="legend">sum(last total) (right axis)</text><text x="90" y="397" class="title">Claude Code Agent SDK</text>
+<rect x="90" y="415" width="800" height="210" class="frame"/>
+<line x1="90" y1="425.0" x2="890" y2="425.0" class="threshold"/>
+<text x="96" y="420.0" class="small">Smart zone 200,000</text>
+<text x="82" y="420" class="axis" text-anchor="end">210,041</text>
+<text x="82" y="625" class="axis" text-anchor="end">0</text>
+<text x="898" y="420" class="axis">1,673,796</text>
+<text x="898" y="625" class="axis">0</text>
+<text x="490.0" y="650" class="axis" text-anchor="middle">session observations</text>
+<polyline points="90.0,612.3 147.1,597.8 204.3,583.7 261.4,569.6 318.6,555.6 375.7,541.5 432.9,527.5 490.0,513.4 547.1,499.3 604.3,485.3 661.4,471.2 718.6,457.2 775.7,443.1 832.9,429.1 890.0,415.0" style="stroke:#006d77" class="series"/>
+<text x="90" y="673" style="fill:#006d77" class="legend">get_context_usage total</text>
+<polyline points="90.0,612.3 147.1,597.8 204.3,583.7 261.4,569.6 318.6,555.6 375.7,541.5 432.9,527.5 490.0,513.4 547.1,499.3 604.3,485.3 661.4,471.2 718.6,457.2 775.7,443.1 832.9,429.1 890.0,415.0" style="stroke:#ee6c4d" class="series"/>
+<text x="490" y="673" style="fill:#ee6c4d" class="legend">cache-additive request input</text>
+<polyline points="90.0,623.4 147.1,620.0 204.3,614.8 261.4,607.9 318.6,599.1 375.7,588.7 432.9,576.4 490.0,562.4 547.1,546.7 604.3,529.1 661.4,509.8 718.6,488.8 775.7,465.9 832.9,441.4 890.0,415.0" style="stroke:#6a4c93" class="series cumulative"/>
+<text x="90" y="695" style="fill:#6a4c93" class="legend">cumulative billed input (right axis)</text>
+</svg>
