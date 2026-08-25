@@ -679,6 +679,16 @@ def test_an_unprotected_branch_is_read_off_the_branch_rather_than_a_404(
     assert not [call for call in world.gh_calls if "protection" in " ".join(call)]
 
 
+def test_a_branch_without_a_boolean_protected_flag_is_not_reported_as_unprotected(
+    world: World, repo_root: Path
+) -> None:
+    # Only `false` proves there is no protection. A null answer says GitHub did not
+    # describe the branch, so turning it into a definite no would hide that failure.
+    world.gh[f"api repos/{REPO}/branches/main --jq .protected"] = "null\n"
+
+    assert isinstance(probed(repo_root).protection, Unavailable)
+
+
 @pytest.mark.parametrize("branch", ["release#1", "release/1.0", "feature?x"])
 def test_a_default_branch_is_asked_after_as_one_path_segment(
     world: World, repo_root: Path, branch: str
@@ -717,6 +727,37 @@ def test_a_protected_branch_is_described(world: World, repo_root: Path) -> None:
         enforce_admins=True,
         require_last_push_approval=True,
     )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("required_approving_review_count", "2"),
+        ("require_last_push_approval", "false"),
+        ("enforce_admins", "false"),
+    ],
+)
+def test_a_protected_branch_with_a_non_typed_field_is_not_coerced(
+    world: World, repo_root: Path, field: str, value: str
+) -> None:
+    # JSON strings are truthy in Python, so coercion turns the literal `"false"` into
+    # true and lets a string approval count reach the diagnosis as if GitHub supplied
+    # the documented boolean and integer fields.
+    reviews: dict[str, object] = {
+        "required_approving_review_count": 2,
+        "require_last_push_approval": False,
+    }
+    enforce_admins: dict[str, object] = {"enabled": True}
+    if field == "enforce_admins":
+        enforce_admins["enabled"] = value
+    else:
+        reviews[field] = value
+    world.gh[f"api repos/{REPO}/branches/main --jq .protected"] = "true\n"
+    world.gh[f"api repos/{REPO}/branches/main/protection"] = json.dumps(
+        {"required_pull_request_reviews": reviews, "enforce_admins": enforce_admins}
+    )
+
+    assert isinstance(probed(repo_root).protection, Unavailable)
 
 
 def test_protection_without_a_review_rule_reports_no_count(world: World, repo_root: Path) -> None:

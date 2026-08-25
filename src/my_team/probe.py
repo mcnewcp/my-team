@@ -160,7 +160,7 @@ def _field[T](data: Any, name: str, kind: type[T]) -> T:
     raises what the caller already catches rather than adding a second way to fail.
     """
     value = data[name]
-    if not isinstance(value, kind):
+    if type(value) is not kind:
         raise TypeError(f"`{name}` is {value!r}")
     return value
 
@@ -234,8 +234,13 @@ def _protection(
             ["api", f"repos/{repo.name_with_owner}/branches/{ref}", "--jq", ".protected"],
             cwd=repo_root,
         ).strip()
-        if protected != "true":
+        if protected == "false":
             return Unprotected(branch=branch)
+        if protected != "true":
+            return Unavailable(
+                f"{branch}: GitHub described the branch's `protected` flag "
+                f"unrecognisably — {protected!r}"
+            )
         data = gh_json(
             ["api", f"repos/{repo.name_with_owner}/branches/{ref}/protection"], cwd=repo_root
         )
@@ -246,14 +251,21 @@ def _protection(
 
 def _protection_of(branch: str, data: Any) -> Protection | Unavailable:
     try:
-        reviews = data.get("required_pull_request_reviews") or {}
+        reviews = data.get("required_pull_request_reviews")
+        count = None
+        last_push = False
+        if reviews is not None:
+            reviews = _field(data, "required_pull_request_reviews", dict)
+            count = _field(reviews, "required_approving_review_count", int)
+            last_push = _field(reviews, "require_last_push_approval", bool)
+        enforce_admins = _field(data, "enforce_admins", dict)
         return Protection(
             branch=branch,
-            required_approving_review_count=reviews.get("required_approving_review_count"),
-            enforce_admins=bool((data.get("enforce_admins") or {}).get("enabled")),
-            require_last_push_approval=bool(reviews.get("require_last_push_approval")),
+            required_approving_review_count=count,
+            enforce_admins=_field(enforce_admins, "enabled", bool),
+            require_last_push_approval=last_push,
         )
-    except AttributeError as error:
+    except (AttributeError, KeyError, TypeError) as error:
         return Unavailable(f"{branch}: GitHub described the protection unrecognisably — {error}")
 
 
