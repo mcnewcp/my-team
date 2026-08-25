@@ -94,18 +94,24 @@ def test_the_console_script_is_on_the_path_and_runs(flag: str) -> None:
     assert "my-team" in result.stdout
 
 
-class Healthy:
-    """A `probe` that answers with a repo where nothing is wrong."""
+class Unconfigured:
+    """A `probe` that answers with a repo holding no config file.
 
-    def __init__(self, ok: bool = True) -> None:
-        self.ok = ok
+    `gh` and the harness are found; the product owner, the repo and the roles are all
+    unavailable behind the missing config, so this is a blocked diagnosis rather than a
+    clean bill of health — what the tests below assert is the wiring around one.
+    `gh_on_path` varies that single answer and nothing else.
+    """
+
+    def __init__(self, gh_on_path: bool = True) -> None:
+        self.gh_on_path = gh_on_path
         self.roots: list[Path] = []
 
     def __call__(self, repo_root: Path, *, now: int) -> Facts:
         self.roots.append(repo_root)
         gh: GhFacts | Unavailable = (
             GhFacts(path="/usr/bin/gh", account="mcnewcp")
-            if self.ok
+            if self.gh_on_path
             else Unavailable("`gh` is not on PATH")
         )
         return Facts(
@@ -128,7 +134,7 @@ def test_doctor_is_listed_among_the_commands(capsys: pytest.CaptureFixture[str])
 def test_doctor_prints_the_diagnosis(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr("my_team.cli.probe", Healthy())
+    monkeypatch.setattr("my_team.cli.probe", Unconfigured())
 
     main(["doctor"])
 
@@ -140,7 +146,7 @@ def test_doctor_exits_non_zero_when_a_blocking_check_failed(
 ) -> None:
     # The exit-code table describes an issue's fate, so only these two can honestly
     # describe a diagnostic.
-    monkeypatch.setattr("my_team.cli.probe", Healthy())
+    monkeypatch.setattr("my_team.cli.probe", Unconfigured())
 
     assert main(["doctor"]) == ExitCode.ERROR
     capsys.readouterr()
@@ -160,7 +166,7 @@ def test_doctor_looks_at_the_directory_it_was_run_from(
 ) -> None:
     # The CLI is run from the target repo root, which is what lets `gh` infer the repo
     # and the harness pick up project context.
-    probe = Healthy()
+    probe = Unconfigured()
     monkeypatch.setattr("my_team.cli.probe", probe)
     monkeypatch.chdir(tmp_path)
 
