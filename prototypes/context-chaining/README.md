@@ -115,6 +115,28 @@ The run writes raw protocol events under `local/traces/`, the ignored Handoffs u
 `local/handoffs/`, and a derived local summary at `local/handoff-summary.json`. Stop and review the
 sanitized M3 evidence before adding fresh-session continuation.
 
+## M4 — fresh-session continuation
+
+`continuation.py` runs one synthetic three-unit Action through three sessions per Harness. The
+first two source sessions cross a configurable absolute occupancy, interrupt, drain, and write a
+strict nonce-bearing JSON Handoff. The driver validates each document before starting a fresh
+successor, embeds the validated document into that successor's first prompt, and never calls a
+resume API. The third session must return the exact Action completion proof.
+
+Two Handoff boundaries make identity timing and repeated chaining observable. The runner also
+exercises missing and malformed documents against the same fail-loud validator before any live
+chain. No human input or outer loop intervenes after the command starts.
+
+From this directory:
+
+```sh
+./run-safe continuation.py --target 25000 --max-cycles 8
+```
+
+The run writes raw protocol events and Handoffs under `local/`, plus the derived local summary at
+`local/continuation-summary.json`. Stop and review sanitized M4 evidence before adding real skill
+dispatch.
+
 Running `workload.md` sends the listed repository files to the selected model service. Preparing
 the workload does not authorize that transfer; obtain the Product Owner's explicit approval before
 a milestone runner executes it against a private repository.
