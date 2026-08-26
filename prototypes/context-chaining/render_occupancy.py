@@ -85,9 +85,7 @@ def rederive_legacy_claude_usage(summary: dict[str, Any]) -> dict[str, Any]:
                     "request_cache_creation_input_tokens": int(
                         usage.get("cache_creation_input_tokens", 0)
                     ),
-                    "request_cache_read_input_tokens": int(
-                        usage.get("cache_read_input_tokens", 0)
-                    ),
+                    "request_cache_read_input_tokens": int(usage.get("cache_read_input_tokens", 0)),
                     "request_output_tokens": int(usage.get("output_tokens", 0)),
                     "cumulative_billed_input_tokens": cumulative_billed_input,
                     "model": context_usage.get("model"),

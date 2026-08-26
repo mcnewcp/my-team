@@ -367,9 +367,7 @@ async def run_claude(
                 result_usage = result.usage or {}
                 iterations = result_usage.get("iterations")
                 if not isinstance(iterations, list) or not iterations:
-                    raise RuntimeError(
-                        f"Claude cycle {cycle} ResultMessage had no iteration usage"
-                    )
+                    raise RuntimeError(f"Claude cycle {cycle} ResultMessage had no iteration usage")
                 request_usages = [dict(usage) for usage in iterations]
                 context_usage = await client.get_context_usage()
                 trace.write("client.get_context_usage", {"cycle": cycle, **context_usage})
