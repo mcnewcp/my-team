@@ -68,6 +68,29 @@ From this directory:
 The renderer writes the sanitized report and SVG plot under `evidence/`. Review M1 before adding
 interruption, Handoff, continuation, or skill-dispatch behavior.
 
+## M2 — absolute-occupancy interruption
+
+`interrupt.py` reuses the accepted M1 signals and adds only the configured count check and
+interrupt-to-terminal path. Codex checks `last.totalTokens` at the completed-turn cadence observed
+in M1, starts the next turn, sends `turn/interrupt`, and keeps consuming app-server events through
+the matching `turn/completed`. Claude starts its interrupt-target query, checks
+`get_context_usage().totalTokens` through the live control channel, calls `interrupt()`, and drains
+`receive_response()` through exactly one terminal `ResultMessage`.
+
+An arbitrary positive target can exercise the mechanics cheaply. The accepted M1 run already
+established that both effective Harness/model combinations can cross the desired 200,000-token
+default before compaction.
+
+From this directory:
+
+```sh
+./run-safe interrupt.py --target 50000 --max-cycles 12
+```
+
+The run writes full raw protocol events under `local/traces/` and a derived local summary at
+`local/interruption-summary.json`. Stop and review the sanitized M2 evidence before adding a
+Handoff turn.
+
 Running `workload.md` sends the listed repository files to the selected model service. Preparing
 the workload does not authorize that transfer; obtain the Product Owner's explicit approval before
 a milestone runner executes it against a private repository.
