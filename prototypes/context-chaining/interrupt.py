@@ -19,6 +19,8 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    PermissionResultAllow,
+    PermissionResultDeny,
     ResultMessage,
     SystemMessage,
 )
@@ -46,13 +48,23 @@ from occupancy import (
     sha256,
 )
 
-SUMMARY = LOCAL / "interruption-summary.json"
+INTERRUPTION_SUMMARY = LOCAL / "interruption-summary.json"
+HANDOFF_SUMMARY = LOCAL / "handoff-summary.json"
+HANDOFFS = LOCAL / "handoffs"
 INTERRUPT_PROMPT = """You are the interrupt target in a read-only Harness mechanics test. Do not
 use tools, read files, run commands, access the network, or change any state. Begin writing a
 numbered list of short observations about why current context occupancy differs from cumulative
 billing usage. Continue adding distinct observations until the Harness interrupts you.
 """
 CLAUDE_INTERRUPTED_REASONS = {"aborted_streaming", "aborted_tools"}
+
+
+def handoff_content(stamp: str, harness: str) -> str:
+    return f"HANDOFF: same-session placeholder {stamp}-{harness}\n"
+
+
+def handoff_prompt(path: Path, content: str) -> str:
+    return f"Write exactly {json.dumps(content)} to {path}, then reply exactly HANDOFF_WRITTEN."
 
 
 def direct_crossing(
@@ -75,15 +87,30 @@ def observed_turn_id(message: dict[str, Any]) -> str | None:
     return params.get("turnId") or (params.get("turn") or {}).get("id")
 
 
-async def wait_for_codex_terminal(client: CodexAppServer, *, turn_id: str) -> dict[str, Any]:
+async def wait_for_codex_terminal(
+    client: CodexAppServer,
+    *,
+    turn_id: str,
+    cycle: int,
+    cumulative_last_total: int,
+) -> tuple[list[dict[str, Any]], int, dict[str, Any]]:
+    observations: list[dict[str, Any]] = []
     while True:
         if client.notifications:
             message = client.notifications.pop(0)
         else:
             message = await client.receive()
-        if message.get("method") == "turn/completed" and observed_turn_id(message) == turn_id:
-            params: dict[str, Any] = message.get("params") or {}
-            return params
+        method = message.get("method")
+        params: dict[str, Any] = message.get("params") or {}
+        if method == "thread/tokenUsage/updated" and observed_turn_id(message) == turn_id:
+            observation, cumulative_last_total = codex_usage_observation(
+                params,
+                cycle=cycle,
+                cumulative_last_total=cumulative_last_total,
+            )
+            observations.append(observation)
+        elif method == "turn/completed" and observed_turn_id(message) == turn_id:
+            return observations, cumulative_last_total, params
         if "method" in message and "id" not in message:
             continue
         raise RuntimeError(f"unexpected Codex app-server message: {message}")
@@ -116,8 +143,17 @@ async def receive_completed_codex_turn(
             raise RuntimeError(f"unexpected Codex app-server message: {message}")
 
 
-async def run_codex(stamp: str, workspace: Path, *, target: int, max_cycles: int) -> dict[str, Any]:
-    trace = Trace(TRACES / f"{stamp}-codex-interruption.jsonl")
+async def run_codex(
+    stamp: str,
+    workspace: Path,
+    *,
+    target: int,
+    max_cycles: int,
+    include_handoff: bool,
+    handoff_path: Path,
+) -> dict[str, Any]:
+    milestone = "handoff" if include_handoff else "interruption"
+    trace = Trace(TRACES / f"{stamp}-codex-{milestone}.jsonl")
     observations: list[dict[str, Any]] = []
     compactions: list[dict[str, Any]] = []
     cumulative_last_total = 0
@@ -131,7 +167,7 @@ async def run_codex(stamp: str, workspace: Path, *, target: int, max_cycles: int
                         "name": "my-team-context-chaining-prototype",
                         "version": "0.1",
                     },
-                    "capabilities": {"experimentalApi": False},
+                    "capabilities": {"experimentalApi": include_handoff},
                 },
             )
             await client.send({"method": "initialized"})
@@ -207,6 +243,9 @@ async def run_codex(stamp: str, workspace: Path, *, target: int, max_cycles: int
 
             crossing = direct_crossing(observations, "last_total_tokens", target)
             interrupt: dict[str, Any] | None = None
+            interrupt_usage: list[dict[str, Any]] = []
+            terminal_cleanup: dict[str, Any] | None = None
+            handoff: dict[str, Any] | None = None
             if crossing is not None and not compactions:
                 turn_result = await client.request(
                     "turn/start",
@@ -224,7 +263,14 @@ async def run_codex(stamp: str, workspace: Path, *, target: int, max_cycles: int
                     {"threadId": thread_id, "turnId": turn_id},
                 )
                 acknowledged_at = now()
-                completed = await wait_for_codex_terminal(client, turn_id=turn_id)
+                interrupt_usage, cumulative_last_total, completed = await wait_for_codex_terminal(
+                    client,
+                    turn_id=turn_id,
+                    cycle=len(observations) + 1,
+                    cumulative_last_total=cumulative_last_total,
+                )
+                for observation in interrupt_usage:
+                    observation["phase"] = "interrupt"
                 terminal_at = now()
                 reject_codex_tools(completed)
                 completed_turn = completed.get("turn") or {}
@@ -241,7 +287,118 @@ async def run_codex(stamp: str, workspace: Path, *, target: int, max_cycles: int
                     "terminal_item_types": [
                         item.get("type") for item in (completed_turn.get("items") or [])
                     ],
+                    "usage_observations": interrupt_usage,
                 }
+
+                if include_handoff and completed_turn.get("status") == "interrupted":
+                    cleanup_started_at = now()
+                    terminals_before = await client.request(
+                        "thread/backgroundTerminals/list",
+                        {"threadId": thread_id},
+                    )
+                    clean_response = await client.request(
+                        "thread/backgroundTerminals/clean",
+                        {"threadId": thread_id},
+                    )
+                    terminals_after = await client.request(
+                        "thread/backgroundTerminals/list",
+                        {"threadId": thread_id},
+                    )
+                    cleanup_completed_at = now()
+                    terminal_cleanup = {
+                        "experimental_api_enabled": True,
+                        "started_after_interrupt_terminal": cleanup_started_at >= terminal_at,
+                        "started_at": cleanup_started_at,
+                        "terminals_before": terminals_before.get("data") or [],
+                        "clean_response": clean_response,
+                        "terminals_after": terminals_after.get("data") or [],
+                        "completed_at": cleanup_completed_at,
+                    }
+
+                    content = handoff_content(stamp, "codex")
+                    prompt = handoff_prompt(handoff_path, content)
+                    before_observation = (interrupt_usage or observations)[-1]
+                    handoff_started_at = now()
+                    handoff_turn_result = await client.request(
+                        "turn/start",
+                        {
+                            "threadId": thread_id,
+                            "cwd": str(handoff_path.parent),
+                            "approvalPolicy": "never",
+                            "sandboxPolicy": {
+                                "type": "workspaceWrite",
+                                "writableRoots": [str(handoff_path.parent)],
+                                "networkAccess": False,
+                                "excludeSlashTmp": True,
+                                "excludeTmpdirEnvVar": True,
+                            },
+                            "input": [{"type": "text", "text": prompt}],
+                        },
+                    )
+                    handoff_turn = handoff_turn_result["turn"]
+                    handoff_turn_id = handoff_turn["id"]
+                    (
+                        handoff_updates,
+                        cumulative_last_total,
+                        handoff_completed,
+                    ) = await receive_completed_codex_turn(
+                        client,
+                        turn_id=handoff_turn_id,
+                        cycle=len(observations) + 2,
+                        cumulative_last_total=cumulative_last_total,
+                    )
+                    for observation in handoff_updates:
+                        observation["phase"] = "handoff"
+                    handoff_terminal_at = now()
+                    handoff_completed_turn = handoff_completed.get("turn") or {}
+                    items = handoff_completed_turn.get("items") or []
+                    after_observation = handoff_updates[-1] if handoff_updates else None
+                    observed_content = (
+                        handoff_path.read_text(encoding="utf-8") if handoff_path.is_file() else None
+                    )
+                    before_tokens = int(before_observation["last_total_tokens"])
+                    after_tokens = (
+                        int(after_observation["last_total_tokens"])
+                        if after_observation is not None
+                        else None
+                    )
+                    context_window = before_observation.get("model_context_window")
+                    handoff = {
+                        "prompt": prompt,
+                        "prompt_is_one_line": "\n" not in prompt,
+                        "original_thread_id": thread_id,
+                        "handoff_thread_id": thread_id,
+                        "same_session_as_interrupted": True,
+                        "thread_start_request_count": 1,
+                        "fresh_session_started": False,
+                        "turn_id": handoff_turn_id,
+                        "start_response_status": handoff_turn.get("status"),
+                        "started_after_cleanup": handoff_started_at >= cleanup_completed_at,
+                        "started_at": handoff_started_at,
+                        "terminal_at": handoff_terminal_at,
+                        "terminal_event": "turn/completed",
+                        "terminal_status": handoff_completed_turn.get("status"),
+                        "terminal_item_types": [item.get("type") for item in items],
+                        "write_item_observed": any(
+                            item.get("type") in {"fileChange", "commandExecution"} for item in items
+                        ),
+                        "usage_observations": handoff_updates,
+                        "occupancy_before_tokens": before_tokens,
+                        "occupancy_after_tokens": after_tokens,
+                        "headroom_consumed_tokens": (
+                            after_tokens - before_tokens if after_tokens is not None else None
+                        ),
+                        "remaining_context_tokens": (
+                            int(context_window) - after_tokens
+                            if context_window is not None and after_tokens is not None
+                            else None
+                        ),
+                        "document_path": str(handoff_path.relative_to(ROOT)),
+                        "document_expected": content,
+                        "document_observed": observed_content,
+                        "document_matches": observed_content == content,
+                        "document_sha256": sha256(handoff_path) if handoff_path.is_file() else None,
+                    }
 
             trace_path = trace.path
             return {
@@ -266,31 +423,43 @@ async def run_codex(stamp: str, workspace: Path, *, target: int, max_cycles: int
                 "compactions": compactions,
                 "compaction_before_target": bool(compactions and crossing is None),
                 "interrupt": interrupt,
+                "terminal_cleanup": terminal_cleanup,
+                "handoff": handoff,
                 "trace": str(trace_path.relative_to(ROOT)),
             }
     finally:
         trace.close()
 
 
-def claude_options(workspace: Path) -> ClaudeAgentOptions:
+def claude_options(
+    workspace: Path,
+    *,
+    include_handoff: bool,
+    handoff_directory: Path,
+    can_use_tool: Any | None,
+) -> ClaudeAgentOptions:
+    disallowed_tools = [
+        "Bash",
+        "Read",
+        "Glob",
+        "Grep",
+        "Edit",
+        "NotebookEdit",
+        "WebFetch",
+        "WebSearch",
+    ]
+    if not include_handoff:
+        disallowed_tools.append("Write")
     return ClaudeAgentOptions(
-        tools=[],
+        tools=["Write"] if include_handoff else [],
         allowed_tools=[],
-        disallowed_tools=[
-            "Bash",
-            "Read",
-            "Glob",
-            "Grep",
-            "Write",
-            "Edit",
-            "NotebookEdit",
-            "WebFetch",
-            "WebSearch",
-        ],
-        permission_mode="dontAsk",
+        disallowed_tools=disallowed_tools,
+        permission_mode="default" if include_handoff else "dontAsk",
         cwd=workspace,
+        add_dirs=[handoff_directory] if include_handoff else [],
         setting_sources=[],
         max_turns=3,
+        can_use_tool=can_use_tool,
         env=os.environ.copy(),
     )
 
@@ -317,19 +486,64 @@ async def drain_claude_response(
 
 
 async def run_claude(
-    stamp: str, workspace: Path, *, target: int, max_cycles: int
+    stamp: str,
+    workspace: Path,
+    *,
+    target: int,
+    max_cycles: int,
+    include_handoff: bool,
+    handoff_path: Path,
 ) -> dict[str, Any]:
     auth = claude_auth_status()
-    trace = Trace(TRACES / f"{stamp}-claude-interruption.jsonl")
+    milestone = "handoff" if include_handoff else "interruption"
+    trace = Trace(TRACES / f"{stamp}-claude-{milestone}.jsonl")
     observations: list[dict[str, Any]] = []
     compactions: list[dict[str, Any]] = []
+    permission_events: list[dict[str, Any]] = []
+    phase = {"name": "warmup"}
     cumulative_billed_input = 0
     previous_direct: int | None = None
     init_model: str | None = None
     assistant_model: str | None = None
     session_id: str | None = None
+
+    async def can_use_tool(
+        tool_name: str, tool_input: dict[str, Any], _context: Any
+    ) -> PermissionResultAllow | PermissionResultDeny:
+        raw_path = tool_input.get("file_path")
+        candidate = Path(str(raw_path)) if raw_path is not None else None
+        if candidate is not None and not candidate.is_absolute():
+            candidate = workspace / candidate
+        path_matches = candidate is not None and candidate.resolve() == handoff_path.resolve()
+        allowed = phase["name"] == "handoff" and tool_name == "Write" and path_matches
+        event = {
+            "at": now(),
+            "phase": phase["name"],
+            "tool_name": tool_name,
+            "path_matches": path_matches,
+            "decision": "allow" if allowed else "deny",
+        }
+        permission_events.append(event)
+        trace.write(
+            "client.can_use_tool",
+            {**event, "tool_input": tool_input},
+        )
+        if allowed:
+            return PermissionResultAllow()
+        return PermissionResultDeny(
+            message="only the exact M3 Handoff write is permitted",
+            interrupt=True,
+        )
+
     try:
-        async with ClaudeSDKClient(options=claude_options(workspace)) as client:
+        async with ClaudeSDKClient(
+            options=claude_options(
+                workspace,
+                include_handoff=include_handoff,
+                handoff_directory=handoff_path.parent,
+                can_use_tool=can_use_tool if include_handoff else None,
+            )
+        ) as client:
             for cycle in range(1, max_cycles + 1):
                 prompt = cycle_prompt(cycle)
                 trace.write("client.query", {"cycle": cycle, "prompt": prompt})
@@ -391,6 +605,7 @@ async def run_claude(
 
             crossing = direct_crossing(observations, "context_total_tokens", target)
             interrupt: dict[str, Any] | None = None
+            handoff: dict[str, Any] | None = None
             if crossing is not None and not compactions:
                 trace.write("client.query.interrupt_target", {"prompt": INTERRUPT_PROMPT})
                 await client.query(INTERRUPT_PROMPT)
@@ -430,6 +645,85 @@ async def run_claude(
                     "receive_response_stopped_after_terminal": True,
                 }
 
+                if include_handoff and result.terminal_reason in CLAUDE_INTERRUPTED_REASONS:
+                    before_usage = await client.get_context_usage()
+                    before_observed_at = now()
+                    trace.write("client.get_context_usage.before_handoff", before_usage)
+                    content = handoff_content(stamp, "claude")
+                    prompt = handoff_prompt(handoff_path, content)
+                    phase["name"] = "handoff"
+                    handoff_started_at = now()
+                    trace.write("client.query.handoff", {"prompt": prompt})
+                    await client.query(prompt)
+                    (
+                        handoff_result,
+                        handoff_message_types,
+                        _,
+                        handoff_assistant_model,
+                    ) = await drain_claude_response(
+                        client,
+                        trace,
+                        source="server.receive.handoff",
+                    )
+                    assistant_model = handoff_assistant_model or assistant_model
+                    handoff_terminal_at = now()
+                    after_usage = await client.get_context_usage()
+                    after_observed_at = now()
+                    trace.write("client.get_context_usage.after_handoff", after_usage)
+                    phase["name"] = "complete"
+                    observed_content = (
+                        handoff_path.read_text(encoding="utf-8") if handoff_path.is_file() else None
+                    )
+                    before_tokens = int(before_usage["totalTokens"])
+                    after_tokens = int(after_usage["totalTokens"])
+                    context_window = after_usage.get("maxTokens")
+                    handoff = {
+                        "prompt": prompt,
+                        "prompt_is_one_line": "\n" not in prompt,
+                        "original_session_id": session_id,
+                        "interrupted_session_id": result.session_id,
+                        "handoff_session_id": handoff_result.session_id,
+                        "same_session_as_interrupted": (
+                            handoff_result.session_id == result.session_id == session_id
+                        ),
+                        "client_connection_count": 1,
+                        "fresh_session_started": handoff_result.session_id != session_id,
+                        "started_after_interrupted_drain": handoff_started_at >= terminal_at,
+                        "started_at": handoff_started_at,
+                        "terminal_at": handoff_terminal_at,
+                        "terminal_event": "ResultMessage",
+                        "terminal_reason": handoff_result.terminal_reason,
+                        "terminal_subtype": handoff_result.subtype,
+                        "terminal_is_error": handoff_result.is_error,
+                        "permission_denials": handoff_result.permission_denials or [],
+                        "drained_message_types": handoff_message_types,
+                        "drained_result_count": handoff_message_types.count("ResultMessage"),
+                        "response": handoff_result.result,
+                        "permission_events": permission_events,
+                        "write_permission_observed": any(
+                            event["phase"] == "handoff"
+                            and event["tool_name"] == "Write"
+                            and event["path_matches"]
+                            and event["decision"] == "allow"
+                            for event in permission_events
+                        ),
+                        "occupancy_before_observed_at": before_observed_at,
+                        "occupancy_after_observed_at": after_observed_at,
+                        "occupancy_before_tokens": before_tokens,
+                        "occupancy_after_tokens": after_tokens,
+                        "headroom_consumed_tokens": after_tokens - before_tokens,
+                        "remaining_context_tokens": (
+                            int(context_window) - after_tokens
+                            if context_window is not None
+                            else None
+                        ),
+                        "document_path": str(handoff_path.relative_to(ROOT)),
+                        "document_expected": content,
+                        "document_observed": observed_content,
+                        "document_matches": observed_content == content,
+                        "document_sha256": sha256(handoff_path) if handoff_path.is_file() else None,
+                    }
+
             trace_path = trace.path
             latest = observations[-1]
             return {
@@ -447,7 +741,7 @@ async def run_claude(
                     "raw_context_window": latest.get("raw_max_tokens"),
                     "auto_compact_enabled": latest.get("auto_compact_enabled"),
                     "auto_compact_threshold": latest.get("auto_compact_threshold"),
-                    "tools": [],
+                    "tools": ["Write"] if include_handoff else [],
                     "setting_sources": [],
                 },
                 "observations": observations,
@@ -455,6 +749,7 @@ async def run_claude(
                 "compactions": compactions,
                 "compaction_before_target": bool(compactions and crossing is None),
                 "interrupt": interrupt,
+                "handoff": handoff,
                 "trace": str(trace_path.relative_to(ROOT)),
             }
     finally:
@@ -481,19 +776,66 @@ def harness_passed(name: str, evidence: dict[str, Any]) -> bool:
     )
 
 
-def outcome(summary: dict[str, Any], selected: str) -> str:
+def handoff_passed(name: str, evidence: dict[str, Any]) -> bool:
+    handoff = evidence.get("handoff") or {}
+    common = (
+        handoff.get("prompt_is_one_line") is True
+        and handoff.get("same_session_as_interrupted") is True
+        and handoff.get("fresh_session_started") is False
+        and handoff.get("document_matches") is True
+        and isinstance(handoff.get("headroom_consumed_tokens"), int)
+        and handoff["headroom_consumed_tokens"] > 0
+        and isinstance(handoff.get("remaining_context_tokens"), int)
+        and handoff["remaining_context_tokens"] > 0
+    )
+    if not common:
+        return False
+    if name == "codex":
+        cleanup = evidence.get("terminal_cleanup") or {}
+        return (
+            cleanup.get("experimental_api_enabled") is True
+            and cleanup.get("started_after_interrupt_terminal") is True
+            and cleanup.get("terminals_after") == []
+            and handoff.get("started_after_cleanup") is True
+            and handoff.get("terminal_event") == "turn/completed"
+            and handoff.get("terminal_status") == "completed"
+            and handoff.get("write_item_observed") is True
+            and handoff.get("thread_start_request_count") == 1
+        )
+    return (
+        handoff.get("started_after_interrupted_drain") is True
+        and handoff.get("terminal_event") == "ResultMessage"
+        and handoff.get("terminal_is_error") is False
+        and handoff.get("drained_result_count") == 1
+        and handoff.get("write_permission_observed") is True
+        and handoff.get("client_connection_count") == 1
+        and not handoff.get("permission_denials")
+    )
+
+
+def outcome(summary: dict[str, Any], selected: str, *, include_handoff: bool) -> str:
     names = ("codex", "claude") if selected == "both" else (selected,)
     if not all(name in summary for name in names):
         return "partial"
-    return "pass" if all(harness_passed(name, summary[name]) for name in names) else "fail"
+    passed = all(harness_passed(name, summary[name]) for name in names)
+    if include_handoff:
+        passed = passed and all(handoff_passed(name, summary[name]) for name in names)
+    return "pass" if passed else "fail"
 
 
-async def run(selected: str, *, target: int, max_cycles: int) -> int:
+async def run(selected: str, *, target: int, max_cycles: int, include_handoff: bool) -> int:
     require_keyless_environment()
     before = config_fingerprints()
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    summary_path = HANDOFF_SUMMARY if include_handoff else INTERRUPTION_SUMMARY
+    handoff_root = HANDOFFS / stamp
+    if include_handoff:
+        handoff_root.mkdir(parents=True)
+        for harness_name in ("codex", "claude"):
+            (handoff_root / harness_name).mkdir()
     summary: dict[str, Any] = {
         "captured_at": now(),
+        "milestone": "M3 same-session Handoff" if include_handoff else "M2 interruption",
         "prototype_commit_before_run": command_output("git", "rev-parse", "HEAD"),
         "platform": platform.platform(),
         "python": sys.version.split()[0],
@@ -502,7 +844,11 @@ async def run(selected: str, *, target: int, max_cycles: int) -> int:
         "workload": {
             "files": list(FILES),
             "embedded_bytes_per_cycle": sum((REPO / path).stat().st_size for path in FILES),
-            "tools": "disabled",
+            "tools": (
+                "disabled during warm-up and interruption; one exact Handoff write permitted"
+                if include_handoff
+                else "disabled"
+            ),
         },
         "trigger_policy": {
             "codex": "last completed-turn last.totalTokens, then interrupt the next turn",
@@ -518,7 +864,11 @@ async def run(selected: str, *, target: int, max_cycles: int) -> int:
     }
     LOCAL.mkdir(exist_ok=True)
     try:
-        with tempfile.TemporaryDirectory(prefix="context-chaining-interruption-") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix=(
+                "context-chaining-handoff-" if include_handoff else "context-chaining-interruption-"
+            )
+        ) as directory:
             workspace = Path(directory)
             if selected in ("both", "codex"):
                 summary["codex"] = await run_codex(
@@ -526,20 +876,24 @@ async def run(selected: str, *, target: int, max_cycles: int) -> int:
                     workspace,
                     target=target,
                     max_cycles=max_cycles,
+                    include_handoff=include_handoff,
+                    handoff_path=handoff_root / "codex" / "handoff.md",
                 )
-                SUMMARY.write_text(json.dumps(summary, indent=2, default=str) + "\n")
+                summary_path.write_text(json.dumps(summary, indent=2, default=str) + "\n")
             if selected in ("both", "claude"):
                 summary["claude"] = await run_claude(
                     stamp,
                     workspace,
                     target=target,
                     max_cycles=max_cycles,
+                    include_handoff=include_handoff,
+                    handoff_path=handoff_root / "claude" / "handoff.md",
                 )
     except Exception as error:
         summary["error"] = str(error)
-        SUMMARY.write_text(json.dumps(summary, indent=2, default=str) + "\n")
-        print(f"interruption run stopped: {error}", file=sys.stderr)
-        print(f"partial observations: {SUMMARY.relative_to(ROOT)}", file=sys.stderr)
+        summary_path.write_text(json.dumps(summary, indent=2, default=str) + "\n")
+        print(f"milestone run stopped: {error}", file=sys.stderr)
+        print(f"partial observations: {summary_path.relative_to(ROOT)}", file=sys.stderr)
         return 1
     after = config_fingerprints()
     if before != after:
@@ -549,10 +903,10 @@ async def run(selected: str, *, target: int, max_cycles: int) -> int:
         harness = summary.get(name)
         if harness:
             harness["trace_sha256"] = sha256(ROOT / harness["trace"])
-    summary["outcome"] = outcome(summary, selected)
-    SUMMARY.write_text(json.dumps(summary, indent=2, default=str) + "\n")
+    summary["outcome"] = outcome(summary, selected, include_handoff=include_handoff)
+    summary_path.write_text(json.dumps(summary, indent=2, default=str) + "\n")
     print(f"outcome: {summary['outcome']}")
-    print(f"observations: {SUMMARY.relative_to(ROOT)}")
+    print(f"observations: {summary_path.relative_to(ROOT)}")
     return 0 if summary["outcome"] in ("pass", "partial") else 1
 
 
@@ -561,8 +915,18 @@ def main() -> None:
     parser.add_argument("--only", choices=("both", "codex", "claude"), default="both")
     parser.add_argument("--target", type=positive_int, default=200_000)
     parser.add_argument("--max-cycles", type=positive_int, default=40)
+    parser.add_argument("--handoff", action="store_true")
     args = parser.parse_args()
-    raise SystemExit(asyncio.run(run(args.only, target=args.target, max_cycles=args.max_cycles)))
+    raise SystemExit(
+        asyncio.run(
+            run(
+                args.only,
+                target=args.target,
+                max_cycles=args.max_cycles,
+                include_handoff=args.handoff,
+            )
+        )
+    )
 
 
 if __name__ == "__main__":
