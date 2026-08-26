@@ -122,6 +122,7 @@ async def receive_completed_codex_turn(
     turn_id: str,
     cycle: int,
     cumulative_last_total: int,
+    completed_item_types: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], int, dict[str, Any]]:
     observations: list[dict[str, Any]] = []
     while True:
@@ -137,6 +138,11 @@ async def receive_completed_codex_turn(
             observations.append(observation)
         elif method == "turn/completed" and observed_turn_id(message) == turn_id:
             return observations, cumulative_last_total, params
+        elif method == "item/completed" and observed_turn_id(message) == turn_id:
+            if completed_item_types is not None:
+                item_type = (params.get("item") or {}).get("type")
+                if isinstance(item_type, str):
+                    completed_item_types.append(item_type)
         elif "method" in message and "id" not in message:
             continue
         else:
@@ -337,6 +343,7 @@ async def run_codex(
                     )
                     handoff_turn = handoff_turn_result["turn"]
                     handoff_turn_id = handoff_turn["id"]
+                    completed_item_types: list[str] = []
                     (
                         handoff_updates,
                         cumulative_last_total,
@@ -346,6 +353,7 @@ async def run_codex(
                         turn_id=handoff_turn_id,
                         cycle=len(observations) + 2,
                         cumulative_last_total=cumulative_last_total,
+                        completed_item_types=completed_item_types,
                     )
                     for observation in handoff_updates:
                         observation["phase"] = "handoff"
@@ -379,8 +387,10 @@ async def run_codex(
                         "terminal_event": "turn/completed",
                         "terminal_status": handoff_completed_turn.get("status"),
                         "terminal_item_types": [item.get("type") for item in items],
+                        "protocol_completed_item_types": completed_item_types,
                         "write_item_observed": any(
-                            item.get("type") in {"fileChange", "commandExecution"} for item in items
+                            item_type in {"fileChange", "commandExecution"}
+                            for item_type in completed_item_types
                         ),
                         "usage_observations": handoff_updates,
                         "occupancy_before_tokens": before_tokens,

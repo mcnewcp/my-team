@@ -91,6 +91,30 @@ The run writes full raw protocol events under `local/traces/` and a derived loca
 `local/interruption-summary.json`. Stop and review the sanitized M2 evidence before adding a
 Handoff turn.
 
+## M3 — same-session Handoff
+
+`interrupt.py --handoff` retains the M2 threshold and interrupt path, then drains the interrupted
+turn before asking the same live session to write a one-line placeholder Handoff under
+`local/handoffs/`. The Handoff is nonce-bearing so the runner can distinguish the current run's
+artifact from stale output. It records session identity, current-context occupancy immediately
+before and after the Handoff, the consumed headroom, and the remaining context window.
+
+Codex opts into its experimental API for an explicit background-terminal list/clean/list sequence
+between the interrupted terminal event and the Handoff turn. The Handoff turn alone receives a
+workspace-write sandbox rooted at its ignored artifact directory. Claude exposes only `Write` and
+uses a permission callback that denies every call except the exact Handoff path during the
+Handoff phase. No successor session is created.
+
+From this directory:
+
+```sh
+./run-safe interrupt.py --handoff --target 50000 --max-cycles 12
+```
+
+The run writes raw protocol events under `local/traces/`, the ignored Handoffs under
+`local/handoffs/`, and a derived local summary at `local/handoff-summary.json`. Stop and review the
+sanitized M3 evidence before adding fresh-session continuation.
+
 Running `workload.md` sends the listed repository files to the selected model service. Preparing
 the workload does not authorize that transfer; obtain the Product Owner's explicit approval before
 a milestone runner executes it against a private repository.
