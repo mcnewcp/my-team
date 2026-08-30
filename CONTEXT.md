@@ -29,7 +29,8 @@ One observation of the target repo's state followed by exactly one action, then 
 _Avoid_: step, cycle, iteration
 
 **Harness**:
-An AI coding tool that `my-team` drives to do the actual engineering — Claude Code, later Codex. `my-team` wires harnesses together; it does not replace them.
+An AI coding tool that `my-team` drives to do the actual engineering — Claude Code or Codex.
+`my-team` wires Harnesses together; it does not replace them.
 _Avoid_: backend, provider, engine, model
 
 **Skill payload**:
@@ -37,15 +38,24 @@ The skills `my-team` installs into a **target repo** — the procedures its **ro
 _Avoid_: bundle, kit, templates, prompts
 
 **Role**:
-An identity with authority — the implementer, the reviewer, the judge. A role holds its own credential and is what GitHub sees acting. Roles are provisioned once and perform many actions.
-_Avoid_: worker, bot, agent
+A bounded responsibility in the delivery pipeline, such as Contractor, Implementer, Auditor,
+Reviewer, Judge, Remediator or Integrator. A Role may be performed by a harness session or
+mechanically and does not itself imply a GitHub credential.
+_Avoid_: stage, worker, bot, agent
+
+**Principal**:
+The credentialed identity under which a **Role** acts and GitHub records authority. Multiple Roles
+may use one Principal; the responsibility and the identity permitted to perform it are distinct.
+_Avoid_: role identity, bot account, actor
 
 **Product owner**:
 The human the loop works for and escalates to. One GitHub login per target repo, and the only person the orchestrator ever addresses by name.
 _Avoid_: owner, maintainer, user
 
 **Trusted human**:
-A GitHub user whose association with the **target repo** is `OWNER`, `MEMBER` or `COLLABORATOR`, read from the platform on every observation rather than listed in config. Their prose is what an agent is told to act on and their approval counts; no GitHub App is ever one, the **roles** included.
+A GitHub user whose association with the **target repo** is `OWNER`, `MEMBER` or `COLLABORATOR`,
+read from the platform on every observation rather than listed in config. Their prose is what an
+agent is told to act on and their approval counts; no GitHub App **Principal** is ever one.
 _Avoid_: allowlist, trusted user, maintainer
 
 **Action**:
@@ -95,7 +105,9 @@ rather than a livelock.
 _Avoid_: rules, dispatch table, decision tree, chain
 
 **Declaration**:
-An observable act by which a role asserts something the orchestrator cannot verify for itself — the counterpart to **Verify by observation**. A Declaration is always a deliberate API call attributable to a role identity, never prose the orchestrator reads. Exactly two exist: the implementer marking its pull request ready, and the judge submitting a formal review.
+An observable act by which a **Role** asserts something the orchestrator cannot verify for itself —
+the counterpart to **Verify by observation**. A Declaration is always a deliberate API call
+attributable to a **Principal**, never prose the orchestrator reads.
 _Avoid_: signal, report, claim
 
 **Narration**:
