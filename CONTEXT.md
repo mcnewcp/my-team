@@ -81,6 +81,49 @@ _Avoid_: failure, abort, bail
 A **trusted human** applying `ready-for-agent` to an issue body they have read — the act that admits an issue to the loop. It lapses if the body is edited by an untrusted editor afterwards, and **escalation** revokes it.
 _Avoid_: approval, permission, gate, sign-off
 
+### The Contract
+
+**Contract**:
+The definition of done for one issue, fixed before implementation. It names the outcomes
+that must be proven and the boundaries neither implementation nor review may expand.
+_Avoid_: specification, brief, issue body, requirements
+
+**Contract Candidate**:
+A validated proposal for a **Contract** that has not crossed its approval boundary. A candidate
+may be followed by a correction or successor; it is not yet permission to implement.
+_Avoid_: draft contract, proposal, working contract
+
+**Contract Approval**:
+The act by which the **Product owner** accepts one **Contract Candidate** as the definition of done
+and releases implementation. It is distinct from **Authorization**, which admits the issue to
+the loop.
+_Avoid_: authorization, sign-off, acceptance
+
+**Acceptance Criterion**:
+One stable, falsifiable outcome in a **Contract** that the finished change must prove. A changed
+outcome is a new criterion, never a reinterpretation of the old one.
+_Avoid_: requirement, check, test
+
+**Test Plan**:
+The **Contract's** account of how each **Acceptance Criterion** can be proven, expressed as setup,
+action and an observable oracle. It names proof intent rather than implementation-owned tests.
+_Avoid_: test suite, test list, QA plan
+
+**Non-Goal**:
+A salient outcome deliberately excluded from a **Contract**. It guards a likely scope temptation
+without claiming to enumerate everything the issue will not do.
+_Avoid_: rejection, omission, backlog item
+
+**Test Budget**:
+The **Contract's** hard ceiling on new leaf test cases for the issue. Every case added for an
+**Acceptance Criterion** or a demonstrated defect consumes the same finite budget.
+_Avoid_: coverage target, token budget, estimate
+
+**Scope Path**:
+A repository path boundary naming where the issue may change files and which kinds of change are
+allowed. It restricts the delivered diff, not what a **Role** may read.
+_Avoid_: working directory, read scope, module
+
 ### State and narration
 
 **Observation**:
