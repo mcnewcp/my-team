@@ -1,0 +1,2652 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PROTOTYPE — Contract freeze protocol</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #5d687c;
+      --line: #d8deea;
+      --soft: #f5f7fb;
+      --paper: #ffffff;
+      --accent: #3159c6;
+      --accent-soft: #eef2ff;
+      --good: #18794e;
+      --good-soft: #eaf8f0;
+      --warn: #9a6700;
+      --warn-soft: #fff8df;
+      --bad: #b42318;
+      --bad-soft: #fff0ee;
+      --code: #101828;
+      --shadow: 0 12px 32px rgba(23, 32, 51, 0.08);
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(49, 89, 198, 0.09), transparent 30rem),
+        #f8f9fc;
+      font-family:
+        Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    code,
+    pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    code {
+      font-size: 0.9em;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 42px 0 72px;
+    }
+
+    .hero {
+      margin-bottom: 26px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 12px;
+      padding: 5px 10px;
+      border: 1px solid #f1b8b3;
+      border-radius: 999px;
+      color: var(--bad);
+      background: var(--bad-soft);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      max-width: 850px;
+      margin-bottom: 12px;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.04;
+      letter-spacing: -0.04em;
+    }
+
+    .hero > p {
+      max-width: 820px;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .question {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
+      gap: 26px;
+      margin-bottom: 22px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .question h2 {
+      margin-bottom: 8px;
+      font-size: 20px;
+    }
+
+    .question p {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .proposal {
+      margin: 0;
+      padding-left: 20px;
+      color: var(--muted);
+    }
+
+    .proposal li + li {
+      margin-top: 7px;
+    }
+
+    .section {
+      margin-top: 22px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .section-heading {
+      display: flex;
+      gap: 18px;
+      align-items: start;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .section-heading h2 {
+      margin-bottom: 4px;
+      font-size: 22px;
+    }
+
+    .section-heading p {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .quiet-button {
+      flex: none;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: var(--paper);
+      font-weight: 650;
+    }
+
+    .quiet-button:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .state-cell {
+      min-height: 92px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .state-cell span {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .state-cell strong {
+      display: block;
+      overflow-wrap: anywhere;
+      font-size: 14px;
+      line-height: 1.3;
+    }
+
+    .event {
+      margin-top: 12px;
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--muted);
+      background: var(--soft);
+      font-size: 14px;
+    }
+
+    .event.good {
+      border-color: #a8dfc1;
+      color: var(--good);
+      background: var(--good-soft);
+    }
+
+    .event.bad {
+      border-color: #f1b8b3;
+      color: var(--bad);
+      background: var(--bad-soft);
+    }
+
+    .event.warn {
+      border-color: #ead28a;
+      color: var(--warn);
+      background: var(--warn-soft);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.55fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .thread,
+    .rule-rail {
+      min-width: 0;
+    }
+
+    .thread-label {
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .comment {
+      display: grid;
+      grid-template-columns: 40px minmax(0, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .avatar {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border-radius: 50%;
+      color: white;
+      background: #667085;
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .avatar.bot {
+      background: var(--accent);
+    }
+
+    .comment-card {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid #cfd6e4;
+      border-radius: 9px;
+      background: var(--paper);
+    }
+
+    .comment-card.invalid {
+      border-color: #e58d86;
+    }
+
+    .comment-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 13px;
+      border-bottom: 1px solid #dfe3eb;
+      color: var(--muted);
+      background: var(--soft);
+      font-size: 13px;
+    }
+
+    .comment-head span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .comment-head strong {
+      color: var(--ink);
+    }
+
+    .edited {
+      color: var(--bad);
+      font-weight: 800;
+    }
+
+    .comment-body {
+      padding: 17px;
+      overflow-wrap: anywhere;
+    }
+
+    .comment-body h3 {
+      margin: 2px 0 12px;
+      padding-bottom: 9px;
+      border-bottom: 1px solid #e7eaf0;
+      font-size: 20px;
+    }
+
+    .comment-body h4 {
+      margin: 19px 0 7px;
+      font-size: 15px;
+    }
+
+    .comment-body ul {
+      margin: 8px 0 0;
+      padding-left: 22px;
+    }
+
+    .comment-body li + li {
+      margin-top: 7px;
+    }
+
+    .callout {
+      margin: 12px 0;
+      padding: 10px 12px;
+      border-left: 4px solid var(--accent);
+      color: #38445b;
+      background: var(--accent-soft);
+    }
+
+    .callout.warn {
+      border-color: #d3a11b;
+      background: var(--warn-soft);
+    }
+
+    .callout.bad {
+      border-color: var(--bad);
+      background: var(--bad-soft);
+    }
+
+    .digest {
+      display: inline-block;
+      max-width: 100%;
+      padding: 2px 6px;
+      overflow: hidden;
+      border-radius: 5px;
+      color: #344054;
+      background: #eef1f6;
+      text-overflow: ellipsis;
+      vertical-align: bottom;
+      white-space: nowrap;
+    }
+
+    .reaction {
+      display: inline-flex;
+      gap: 5px;
+      align-items: center;
+      margin-top: 14px;
+      padding: 5px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--soft);
+      font-size: 13px;
+    }
+
+    .reaction.approved {
+      border-color: #a8dfc1;
+      color: var(--good);
+      background: var(--good-soft);
+    }
+
+    details.machine {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    details.machine summary {
+      padding: 9px 11px;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    details.machine pre {
+      max-height: 330px;
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      border-top: 1px solid var(--line);
+      color: #dce6ff;
+      background: var(--code);
+      font-size: 11px;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    .rule-rail {
+      position: sticky;
+      top: 16px;
+    }
+
+    .rule {
+      padding: 15px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .rule:first-child {
+      padding-top: 0;
+    }
+
+    .rule:last-child {
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+
+    .rule b {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .rule p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .action-groups {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .action-group {
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .action-group h3 {
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    .button-stack {
+      display: grid;
+      gap: 8px;
+    }
+
+    .action-button,
+    .step-button,
+    .primary-button {
+      width: 100%;
+      padding: 9px 11px;
+      border: 1px solid #bac4d7;
+      border-radius: 8px;
+      color: var(--ink);
+      background: var(--paper);
+      text-align: left;
+      font-weight: 680;
+    }
+
+    .action-button:hover,
+    .step-button:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .action-button.danger {
+      border-color: #e8aaa5;
+      color: var(--bad);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 3px;
+    }
+
+    .tab {
+      flex: none;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--paper);
+      font-weight: 700;
+    }
+
+    .tab.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .walkthrough-panel {
+      margin-top: 15px;
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .walkthrough-panel p {
+      color: var(--muted);
+    }
+
+    .steps {
+      display: grid;
+      gap: 8px;
+      counter-reset: step;
+    }
+
+    .step-button {
+      position: relative;
+      padding-left: 44px;
+      counter-increment: step;
+    }
+
+    .step-button::before {
+      position: absolute;
+      left: 12px;
+      width: 21px;
+      height: 21px;
+      border-radius: 50%;
+      color: white;
+      background: #98a2b3;
+      content: counter(step);
+      font-size: 12px;
+      line-height: 21px;
+      text-align: center;
+    }
+
+    .step-button.current {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .step-button.current::before {
+      background: var(--accent);
+    }
+
+    .step-button.done {
+      color: var(--good);
+      background: var(--good-soft);
+    }
+
+    .step-button.done::before {
+      background: var(--good);
+      content: "✓";
+    }
+
+    .step-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .lab {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 0.7fr);
+      gap: 18px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 470px;
+      padding: 13px;
+      resize: vertical;
+      border: 1px solid #aeb8ca;
+      border-radius: 9px;
+      color: #e7ecf8;
+      background: var(--code);
+      font-size: 12px;
+      line-height: 1.5;
+      tab-size: 2;
+    }
+
+    .lab-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    .primary-button {
+      width: auto;
+      color: white;
+      border-color: var(--accent);
+      background: var(--accent);
+      text-align: center;
+    }
+
+    .validation {
+      min-height: 120px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--soft);
+    }
+
+    .validation h3 {
+      font-size: 15px;
+    }
+
+    .validation ul {
+      padding-left: 19px;
+      color: var(--bad);
+      font-size: 13px;
+    }
+
+    .schema-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .schema-table th,
+    .schema-table td {
+      padding: 8px 5px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .schema-table th {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .decision-questions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .decision-question {
+      padding: 14px;
+      border: 1px solid #c9d2e3;
+      border-radius: 10px;
+      background: var(--accent-soft);
+    }
+
+    .decision-question b {
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .decision-question p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .empty {
+      padding: 22px;
+      border: 1px dashed #b8c1d1;
+      border-radius: 9px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    @media (max-width: 920px) {
+      .question,
+      .workspace,
+      .lab {
+        grid-template-columns: 1fr;
+      }
+
+      .state-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .rule-rail {
+        position: static;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .shell {
+        width: min(calc(100% - 20px), 1180px);
+        padding-top: 24px;
+      }
+
+      .question,
+      .section {
+        padding: 17px;
+      }
+
+      .state-grid,
+      .action-groups,
+      .decision-questions {
+        grid-template-columns: 1fr;
+      }
+
+      .section-heading {
+        display: block;
+      }
+
+      .section-heading .quiet-button {
+        margin-top: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div class="eyebrow">Prototype · throwaway</div>
+      <h1>Make the definition of done feel frozen.</h1>
+      <p>
+        This click-through asks whether one GitHub issue comment can be pleasant for a Product
+        Owner to read, strict enough for a machine to parse, and safely recoverable after retries,
+        corrections, or tampering.
+      </p>
+    </header>
+
+    <section class="question" aria-labelledby="prototype-question">
+      <div>
+        <h2 id="prototype-question">The question this prototype answers</h2>
+        <p>
+          Does an append-only, digest-bound Contract protocol give the Contractor, Product Owner,
+          Implementer, Auditor, and Integrator one unambiguous definition of done without turning
+          the GitHub conversation into a wall of serialization?
+        </p>
+      </div>
+      <ul class="proposal">
+        <li>Readable Markdown is generated from RFC 8785-canonical JSON in the same comment.</li>
+        <li>A Product Owner approves the exact comment with a thumbs-up reaction.</li>
+        <li>Corrections are new revisions; an edit is tampering, never a correction.</li>
+        <li>The pull request repeats the comment permalink and digest.</li>
+      </ul>
+    </section>
+
+    <section class="section" aria-labelledby="state-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="state-heading">Derived protocol state</h2>
+          <p>Everything here is recomputed from the simulated issue and pull request.</p>
+        </div>
+        <button class="quiet-button" id="reset-button" type="button">Reset prototype</button>
+      </div>
+      <div class="state-grid" id="state-grid"></div>
+      <div class="event" id="last-event">Fresh issue. The Contractor may clarify or publish a candidate.</div>
+    </section>
+
+    <section class="section workspace" aria-label="GitHub issue simulation and proposed rules">
+      <div class="thread">
+        <div class="thread-label">GitHub issue · acme/widgets #123</div>
+        <div id="comment-thread"></div>
+      </div>
+      <aside class="rule-rail" aria-label="Rules under test">
+        <div class="thread-label">Rules under test</div>
+        <div class="rule">
+          <b>One authority, two renderings</b>
+          <p>The JSON object is normative. The Markdown is generated from it and reparsed before posting.</p>
+        </div>
+        <div class="rule">
+          <b>The digest has one representation</b>
+          <p>Lowercase SHA-256 covers the UTF-8 RFC 8785 form of the JSON object, excluding the digest itself.</p>
+        </div>
+        <div class="rule">
+          <b>Criterion IDs never drift</b>
+          <p><code>AC-001</code> may survive a revision only when its whole object is unchanged. Changed meaning gets the next unused ID.</p>
+        </div>
+        <div class="rule">
+          <b>Approval binds the comment</b>
+          <p>With the v0.1 gate on, only the configured Product Owner's 👍 on the exact, unedited comment activates it.</p>
+        </div>
+        <div class="rule">
+          <b>Clarification protects product choices</b>
+          <p>If an outcome, proof oracle, budget, or path boundary requires choosing user-visible behavior, the Contractor asks; approval is not permission to guess.</p>
+        </div>
+        <div class="rule">
+          <b>Verifiability has two owners</b>
+          <p>Preflight proves every criterion has deterministic proof structure. Contractor judgment plus Product Owner approval establish that the oracle actually proves the outcome.</p>
+        </div>
+        <div class="rule">
+          <b>No edits, even harmless ones</b>
+          <p>Any edit timestamp invalidates that Contract and escalates. A correction is an append-only successor.</p>
+        </div>
+        <div class="rule">
+          <b>A pending successor blocks</b>
+          <p>An approved revision remains historical, but a later candidate pauses implementation until that candidate is approved.</p>
+        </div>
+        <div class="rule">
+          <b>Implementation closes the chain</b>
+          <p>Once work starts, issue-body edits escalate instead of expanding scope, and new Contract revisions are rejected.</p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="section" aria-labelledby="actions-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="actions-heading">Free play</h2>
+          <p>Push events in any order. Rejections are part of the prototype.</p>
+        </div>
+      </div>
+      <div class="action-groups">
+        <div class="action-group">
+          <h3>Contractor and Product Owner</h3>
+          <div class="button-stack">
+            <button class="action-button" data-action="REQUEST_CLARIFICATION" type="button">Request clarification</button>
+            <button class="action-button" data-action="ANSWER_CLARIFICATION" type="button">Product Owner answers</button>
+            <button class="action-button" data-action="PUBLISH_R1" type="button">Publish valid revision 1</button>
+            <button class="action-button" data-action="APPROVE_LATEST" type="button">Product Owner adds 👍</button>
+            <button class="action-button" data-action="REMOVE_APPROVAL" type="button">Product Owner removes 👍</button>
+          </div>
+        </div>
+        <div class="action-group">
+          <h3>Revision and retry pressure</h3>
+          <div class="button-stack">
+            <button class="action-button" data-action="PUBLISH_R2" type="button">Publish valid correction</button>
+            <button class="action-button" data-action="PUBLISH_BAD_REUSE" type="button">Try changing AC-003 in place</button>
+            <button class="action-button" data-action="DUPLICATE_RETRY" type="button">Replay an ambiguous post</button>
+            <button class="action-button danger" data-action="EDIT_FROZEN" type="button">Edit the frozen comment</button>
+          </div>
+        </div>
+        <div class="action-group">
+          <h3>Pipeline boundary</h3>
+          <div class="button-stack">
+            <button class="action-button" data-action="TOGGLE_APPROVAL" type="button">Toggle approval gate</button>
+            <button class="action-button" data-action="START_IMPLEMENTATION" type="button">Start implementation</button>
+            <button class="action-button" data-action="OPEN_PR_VALID" type="button">Open PR with exact Contract ref</button>
+            <button class="action-button danger" data-action="OPEN_PR_STALE" type="button">Open PR with stale digest</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="walkthrough-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="walkthrough-heading">Guided walkthroughs</h2>
+          <p>Selecting a walkthrough resets the issue so every path is repeatable.</p>
+        </div>
+      </div>
+      <div class="tabs" id="walkthrough-tabs" role="tablist"></div>
+      <div class="walkthrough-panel" id="walkthrough-panel"></div>
+    </section>
+
+    <section class="section" aria-labelledby="lab-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="lab-heading">Machine-readable draft lab</h2>
+          <p>Edit the canonical payload directly, validate it, then publish it into the issue above.</p>
+        </div>
+      </div>
+      <div class="lab">
+        <div>
+          <textarea id="draft-editor" spellcheck="false" aria-label="Contract JSON draft"></textarea>
+          <div class="lab-actions">
+            <button class="quiet-button" id="load-valid" type="button">Load next valid revision</button>
+            <button class="quiet-button" id="load-invalid" type="button">Load ID-reuse mistake</button>
+            <button class="primary-button" id="validate-draft" type="button">Validate draft</button>
+            <button class="primary-button" id="publish-draft" type="button">Validate and publish</button>
+          </div>
+        </div>
+        <div>
+          <div class="validation" id="validation-result"></div>
+          <h3 style="margin-top: 18px;">Exact field semantics</h3>
+          <table class="schema-table">
+            <thead>
+              <tr><th>Field</th><th>Mechanical meaning</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>source</code></td><td>The issue URL and body digest the Contractor read. It must still match when approved.</td></tr>
+              <tr><td><code>digest</code></td><td>Lowercase SHA-256 over UTF-8 RFC 8785 canonical JSON; carried outside the object so it never hashes itself.</td></tr>
+              <tr><td><code>acceptance_criteria</code></td><td>Normative, falsifiable outcomes. IDs are issue-local and never reused; preflight can validate their proof links, not their semantics.</td></tr>
+              <tr><td><code>test_plan</code></td><td>At least one deterministic proof plan covers every active criterion.</td></tr>
+              <tr><td><code>non_goals</code></td><td>Salient exclusions, not acceptance checks and not an exhaustive list of all absent features.</td></tr>
+              <tr><td><code>test_budget</code></td><td>A hard cap on new leaf cases discovered at PR head but absent at the base SHA. Every case traces to an AC or demonstrated blocking defect; exhaustion escalates.</td></tr>
+              <tr><td><code>scope_paths</code></td><td>An allowlist over changed Git paths; both sides of a rename must match. Reading remains unrestricted.</td></tr>
+              <tr><td><code>supersedes</code></td><td>The exact prior comment permalink, revision, and digest; null only for revision 1.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="decision-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="decision-heading">What your reaction should settle</h2>
+          <p>The prototype has opinions on purpose. These are the pressure points worth disagreeing with.</p>
+        </div>
+      </div>
+      <div class="decision-questions">
+        <div class="decision-question">
+          <b>Does 👍 feel like approval?</b>
+          <p>It binds directly to one comment and one actor, but it is less ceremonious than a formal approval comment.</p>
+        </div>
+        <div class="decision-question">
+          <b>Is the comment readable enough?</b>
+          <p>The Product Owner sees outcomes first; serialization is collapsed. Is any section still too implementation-shaped?</p>
+        </div>
+        <div class="decision-question">
+          <b>Is the hard boundary believable?</b>
+          <p>After implementation starts, every scope correction escalates or becomes follow-up work; nothing silently recontracts.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    "use strict";
+
+    const ContractModel = (function () {
+      const CONTRACT_SCHEMA = "my-team.contract/v1";
+      const ISSUE_URL = "https://github.com/acme/widgets/issues/123";
+      const PRODUCT_OWNER = "octavia";
+      const CONTRACTOR = "my-team-contractor[bot]";
+      const CONTRACT_START = "<!-- my-team:contract:v1:start -->";
+      const CONTRACT_END = "<!-- my-team:contract:v1:end -->";
+      const PR_REF_START = "<!-- my-team:contract-ref:v1:start -->";
+      const PR_REF_END = "<!-- my-team:contract-ref:v1:end -->";
+      const SAMPLE_ISSUE_BODY = [
+        "## Request",
+        "",
+        "Add --dry-run to my-team sync. It should show what would change without",
+        "writing target-repository files, and it should behave like the real sync",
+        "when configuration is invalid."
+      ].join("\n");
+
+      function clone(value) {
+        return JSON.parse(JSON.stringify(value));
+      }
+
+      function canonicalize(value) {
+        if (value === null || typeof value !== "object") {
+          return JSON.stringify(value);
+        }
+        if (Array.isArray(value)) {
+          return "[" + value.map(canonicalize).join(",") + "]";
+        }
+        return "{" + Object.keys(value).sort().map(function (key) {
+          return JSON.stringify(key) + ":" + canonicalize(value[key]);
+        }).join(",") + "}";
+      }
+
+      function rotateRight(value, amount) {
+        return (value >>> amount) | (value << (32 - amount));
+      }
+
+      function sha256(text) {
+        const bytes = new TextEncoder().encode(text);
+        const bitLength = BigInt(bytes.length) * 8n;
+        const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64;
+        const data = new Uint8Array(paddedLength);
+        const view = new DataView(data.buffer);
+        const constants = [
+          0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+          0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+          0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+          0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+          0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+          0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+          0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+          0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+          0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+          0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+          0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+          0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+          0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+          0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+          0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+          0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+        ];
+        const hash = [
+          0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+          0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+        ];
+        data.set(bytes);
+        data[bytes.length] = 0x80;
+        for (let index = 0; index < 8; index += 1) {
+          data[paddedLength - 1 - index] =
+            Number((bitLength >> BigInt(index * 8)) & 0xffn);
+        }
+
+        for (let offset = 0; offset < data.length; offset += 64) {
+          const words = new Uint32Array(64);
+          for (let index = 0; index < 16; index += 1) {
+            words[index] = view.getUint32(offset + index * 4);
+          }
+          for (let index = 16; index < 64; index += 1) {
+            const s0 =
+              rotateRight(words[index - 15], 7) ^
+              rotateRight(words[index - 15], 18) ^
+              (words[index - 15] >>> 3);
+            const s1 =
+              rotateRight(words[index - 2], 17) ^
+              rotateRight(words[index - 2], 19) ^
+              (words[index - 2] >>> 10);
+            words[index] =
+              (words[index - 16] + s0 + words[index - 7] + s1) >>> 0;
+          }
+
+          let a = hash[0];
+          let b = hash[1];
+          let c = hash[2];
+          let d = hash[3];
+          let e = hash[4];
+          let f = hash[5];
+          let g = hash[6];
+          let h = hash[7];
+
+          for (let index = 0; index < 64; index += 1) {
+            const sum1 =
+              rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
+            const choice = (e & f) ^ (~e & g);
+            const temp1 =
+              (h + sum1 + choice + constants[index] + words[index]) >>> 0;
+            const sum0 =
+              rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
+            const majority = (a & b) ^ (a & c) ^ (b & c);
+            const temp2 = (sum0 + majority) >>> 0;
+            h = g;
+            g = f;
+            f = e;
+            e = (d + temp1) >>> 0;
+            d = c;
+            c = b;
+            b = a;
+            a = (temp1 + temp2) >>> 0;
+          }
+
+          hash[0] = (hash[0] + a) >>> 0;
+          hash[1] = (hash[1] + b) >>> 0;
+          hash[2] = (hash[2] + c) >>> 0;
+          hash[3] = (hash[3] + d) >>> 0;
+          hash[4] = (hash[4] + e) >>> 0;
+          hash[5] = (hash[5] + f) >>> 0;
+          hash[6] = (hash[6] + g) >>> 0;
+          hash[7] = (hash[7] + h) >>> 0;
+        }
+
+        return Array.from(hash).map(function (word) {
+          return word.toString(16).padStart(8, "0");
+        }).join("");
+      }
+
+      function contractDigest(contract) {
+        return "sha256:" + sha256(canonicalize(contract));
+      }
+
+      function issueBodyDigest() {
+        return "sha256:" + sha256(SAMPLE_ISSUE_BODY);
+      }
+
+      function initialState(approvalRequired) {
+        return {
+          issue: {
+            url: ISSUE_URL,
+            title: "Add a read-only plan mode to sync",
+            body: SAMPLE_ISSUE_BODY,
+            bodyDigest: issueBodyDigest()
+          },
+          approvalRequired: approvalRequired === undefined ? true : approvalRequired,
+          clarification: { status: "none", questions: [], answer: null },
+          comments: [],
+          implementationStarted: false,
+          frozenRef: null,
+          pullRequest: null,
+          nextCommentId: 9001,
+          last: {
+            tone: "neutral",
+            message: "Fresh issue. The Contractor may clarify or publish a candidate."
+          }
+        };
+      }
+
+      function baseContract(state) {
+        return {
+          schema: CONTRACT_SCHEMA,
+          contract_id: "acme/widgets#123",
+          revision: 1,
+          source: {
+            issue_url: state.issue.url,
+            issue_body_sha256: state.issue.bodyDigest
+          },
+          supersedes: null,
+          acceptance_criteria: [
+            {
+              id: "AC-001",
+              outcome:
+                "Running my-team sync --dry-run against a valid target repository exits 0 and leaves every tracked and untracked file byte-for-byte unchanged."
+            },
+            {
+              id: "AC-002",
+              outcome:
+                "The dry run lists each file the equivalent real sync would create, replace, or remove, using repository-relative paths and one operation per line."
+            },
+            {
+              id: "AC-003",
+              outcome:
+                "When configuration is invalid, dry-run exits with the same non-zero code and diagnostic as real sync and still writes no files."
+            }
+          ],
+          test_plan: [
+            {
+              id: "TP-001",
+              covers: ["AC-001", "AC-002"],
+              kind: "automated_test",
+              setup:
+                "Create a temporary target repository with one stale managed file and one missing managed file.",
+              action: "Run dry-run, snapshot the tree, then run real sync in a copy.",
+              oracle:
+                "Dry-run exits 0, its operations match the real diff, and the original tree hash is unchanged.",
+              new_case_budget: 2
+            },
+            {
+              id: "TP-002",
+              covers: ["AC-003"],
+              kind: "automated_test",
+              setup: "Create equivalent target repositories with malformed config.",
+              action: "Run dry-run in one and real sync in the other.",
+              oracle:
+                "Exit codes and diagnostics match; the dry-run repository tree hash is unchanged.",
+              new_case_budget: 1
+            }
+          ],
+          non_goals: [
+            {
+              id: "NG-001",
+              statement: "Machine-readable or JSON plan output."
+            },
+            {
+              id: "NG-002",
+              statement: "Showing textual diffs of file contents."
+            }
+          ],
+          test_budget: {
+            max_new_test_cases: 4
+          },
+          scope_paths: [
+            {
+              path: "src/my_team/cli.py",
+              kind: "file",
+              operations: ["modify"]
+            },
+            {
+              path: "src/my_team/sync.py",
+              kind: "file",
+              operations: ["add", "modify"]
+            },
+            {
+              path: "tests/test_cli.py",
+              kind: "file",
+              operations: ["modify"]
+            },
+            {
+              path: "tests/test_sync.py",
+              kind: "file",
+              operations: ["add", "modify"]
+            }
+          ],
+          retired_criteria: []
+        };
+      }
+
+      function latestCanonicalComment(state) {
+        return analyze(state).candidate;
+      }
+
+      function nextValidContract(state) {
+        const previous = latestCanonicalComment(state);
+        if (!previous) {
+          return baseContract(state);
+        }
+        const next = clone(previous.contract);
+        next.revision = previous.contract.revision + 1;
+        next.supersedes = {
+          revision: previous.contract.revision,
+          comment_url: previous.url,
+          digest: previous.digest
+        };
+        if (next.revision === 2) {
+          next.acceptance_criteria = next.acceptance_criteria.filter(function (criterion) {
+            return criterion.id !== "AC-003";
+          });
+          next.acceptance_criteria.push({
+            id: "AC-004",
+            outcome:
+              "When configuration is invalid, dry-run exits with the same non-zero code and stable error category as real sync, emits no plan lines, and writes no files."
+          });
+          next.test_plan = next.test_plan.filter(function (plan) {
+            return plan.id !== "TP-002";
+          });
+          next.test_plan.push({
+            id: "TP-003",
+            covers: ["AC-004"],
+            kind: "automated_test",
+            setup: "Create equivalent target repositories with malformed config.",
+            action: "Run dry-run in one and real sync in the other.",
+            oracle:
+              "Exit codes and error categories match; dry-run emits no plan and its tree hash is unchanged.",
+            new_case_budget: 1
+          });
+          next.retired_criteria = [{
+            id: "AC-003",
+            replaced_by: "AC-004",
+            reason:
+              "Exact diagnostic wording is unstable across argparse versions; the error category is the product contract."
+          }];
+        }
+        return next;
+      }
+
+      function badIdReuseContract(state) {
+        const previous = latestCanonicalComment(state);
+        if (!previous) {
+          const badFirst = baseContract(state);
+          badFirst.test_plan = [];
+          return badFirst;
+        }
+        const next = clone(previous.contract);
+        next.revision = previous.contract.revision + 1;
+        next.supersedes = {
+          revision: previous.contract.revision,
+          comment_url: previous.url,
+          digest: previous.digest
+        };
+        next.acceptance_criteria[0].outcome =
+          next.acceptance_criteria[0].outcome + " It also prints elapsed time.";
+        return next;
+      }
+
+      function numericId(value, prefix) {
+        if (typeof value !== "string") {
+          return null;
+        }
+        const match = value.match(new RegExp("^" + prefix + "-([0-9]{3})$"));
+        return match ? Number(match[1]) : null;
+      }
+
+      function nonEmptyString(value) {
+        return typeof value === "string" && value.trim().length > 0;
+      }
+
+      function requireExactKeys(value, expected, path, errors) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          return;
+        }
+        const actual = Object.keys(value);
+        expected.forEach(function (key) {
+          if (!actual.includes(key)) {
+            errors.push(path + " is missing required field " + key + ".");
+          }
+        });
+        actual.forEach(function (key) {
+          if (!expected.includes(key)) {
+            errors.push(path + " contains unknown field " + key + ".");
+          }
+        });
+      }
+
+      function validateContract(contract, previous, state) {
+        const errors = [];
+        if (!contract || typeof contract !== "object" || Array.isArray(contract)) {
+          return ["Contract must be one JSON object."];
+        }
+        requireExactKeys(
+          contract,
+          [
+            "schema",
+            "contract_id",
+            "revision",
+            "source",
+            "supersedes",
+            "acceptance_criteria",
+            "test_plan",
+            "non_goals",
+            "test_budget",
+            "scope_paths",
+            "retired_criteria"
+          ],
+          "Contract",
+          errors
+        );
+        requireExactKeys(
+          contract.source,
+          ["issue_url", "issue_body_sha256"],
+          "source",
+          errors
+        );
+        if (contract.supersedes !== null) {
+          requireExactKeys(
+            contract.supersedes,
+            ["revision", "comment_url", "digest"],
+            "supersedes",
+            errors
+          );
+        }
+        if (contract.schema !== CONTRACT_SCHEMA) {
+          errors.push("schema must equal " + CONTRACT_SCHEMA + ".");
+        }
+        if (contract.contract_id !== "acme/widgets#123") {
+          errors.push("contract_id must stay acme/widgets#123 across revisions.");
+        }
+        if (!Number.isInteger(contract.revision) || contract.revision < 1) {
+          errors.push("revision must be a positive integer.");
+        }
+        if (!contract.source || contract.source.issue_url !== state.issue.url) {
+          errors.push("source.issue_url must identify this issue.");
+        }
+        if (!contract.source ||
+            contract.source.issue_body_sha256 !== state.issue.bodyDigest) {
+          errors.push("source.issue_body_sha256 must match the issue body being contracted.");
+        }
+
+        if (!previous) {
+          if (contract.revision !== 1) {
+            errors.push("The first Contract must be revision 1.");
+          }
+          if (contract.supersedes !== null) {
+            errors.push("Revision 1 must set supersedes to null.");
+          }
+        } else {
+          if (contract.revision !== previous.contract.revision + 1) {
+            errors.push("A successor revision must increment the prior revision by exactly one.");
+          }
+          if (!contract.supersedes ||
+              contract.supersedes.revision !== previous.contract.revision ||
+              contract.supersedes.comment_url !== previous.url ||
+              contract.supersedes.digest !== previous.digest) {
+            errors.push("supersedes must bind the exact prior revision, comment permalink, and digest.");
+          }
+        }
+
+        const criteria = Array.isArray(contract.acceptance_criteria)
+          ? contract.acceptance_criteria
+          : [];
+        if (criteria.length === 0) {
+          errors.push("acceptance_criteria must contain at least one criterion.");
+        }
+        const criterionIds = new Set();
+        criteria.forEach(function (criterion, index) {
+          requireExactKeys(
+            criterion,
+            ["id", "outcome"],
+            "acceptance_criteria[" + index + "]",
+            errors
+          );
+          const number = numericId(criterion && criterion.id, "AC");
+          if (number === null) {
+            errors.push("acceptance_criteria[" + index + "].id must match AC-001.");
+          } else if (criterionIds.has(criterion.id)) {
+            errors.push("Acceptance criterion IDs must be unique.");
+          } else {
+            criterionIds.add(criterion.id);
+          }
+          if (!criterion || !nonEmptyString(criterion.outcome)) {
+            errors.push("Every acceptance criterion needs a non-empty outcome.");
+          }
+        });
+
+        const retired = Array.isArray(contract.retired_criteria)
+          ? contract.retired_criteria
+          : [];
+        const retiredIds = new Set();
+        retired.forEach(function (entry, index) {
+          requireExactKeys(
+            entry,
+            ["id", "replaced_by", "reason"],
+            "retired_criteria[" + index + "]",
+            errors
+          );
+          if (numericId(entry && entry.id, "AC") === null) {
+            errors.push("retired_criteria[" + index + "].id must match AC-001.");
+          } else {
+            retiredIds.add(entry.id);
+          }
+          if (!entry || !nonEmptyString(entry.reason)) {
+            errors.push("Every retired criterion needs a reason.");
+          }
+          if (entry && entry.replaced_by !== null &&
+              entry.replaced_by !== undefined &&
+              !criterionIds.has(entry.replaced_by)) {
+            errors.push("A retired criterion's replacement must be active in this revision.");
+          }
+        });
+
+        if (previous) {
+          const previousById = new Map(previous.contract.acceptance_criteria.map(function (item) {
+            return [item.id, item];
+          }));
+          const priorNumbers = previous.contract.acceptance_criteria
+            .concat(previous.contract.retired_criteria || [])
+            .map(function (item) { return numericId(item.id, "AC"); })
+            .filter(function (number) { return number !== null; });
+          const priorMaximum = priorNumbers.length ? Math.max.apply(null, priorNumbers) : 0;
+
+          criteria.forEach(function (criterion) {
+            const old = previousById.get(criterion.id);
+            if (old && canonicalize(old) !== canonicalize(criterion)) {
+              errors.push(
+                criterion.id +
+                " changed in place. Retire it and allocate the next unused criterion ID."
+              );
+            }
+            if (!old && numericId(criterion.id, "AC") <= priorMaximum) {
+              errors.push(criterion.id + " reuses a previously allocated criterion number.");
+            }
+          });
+          previous.contract.acceptance_criteria.forEach(function (criterion) {
+            if (!criterionIds.has(criterion.id) && !retiredIds.has(criterion.id)) {
+              errors.push(
+                criterion.id + " disappeared without a retired_criteria entry."
+              );
+            }
+          });
+        }
+
+        const plans = Array.isArray(contract.test_plan) ? contract.test_plan : [];
+        if (plans.length === 0) {
+          errors.push("test_plan must contain deterministic proof for the active criteria.");
+        }
+        const planIds = new Set();
+        const covered = new Set();
+        let plannedCases = 0;
+        plans.forEach(function (plan, index) {
+          requireExactKeys(
+            plan,
+            [
+              "id",
+              "covers",
+              "kind",
+              "setup",
+              "action",
+              "oracle",
+              "new_case_budget"
+            ],
+            "test_plan[" + index + "]",
+            errors
+          );
+          if (numericId(plan && plan.id, "TP") === null) {
+            errors.push("test_plan[" + index + "].id must match TP-001.");
+          } else if (planIds.has(plan.id)) {
+            errors.push("Test Plan IDs must be unique.");
+          } else {
+            planIds.add(plan.id);
+          }
+          if (!plan || !["automated_test", "github_observation"].includes(plan.kind)) {
+            errors.push("Each Test Plan kind must be automated_test or github_observation.");
+          }
+          ["setup", "action", "oracle"].forEach(function (field) {
+            if (!plan || !nonEmptyString(plan[field])) {
+              errors.push("Every Test Plan entry needs a non-empty " + field + ".");
+            }
+          });
+          if (!plan || !Array.isArray(plan.covers) || plan.covers.length === 0) {
+            errors.push("Every Test Plan entry must cover at least one criterion.");
+          } else {
+            plan.covers.forEach(function (id) {
+              if (!criterionIds.has(id)) {
+                errors.push("Test Plan " + plan.id + " references inactive criterion " + id + ".");
+              }
+              covered.add(id);
+            });
+          }
+          if (!plan || !Number.isInteger(plan.new_case_budget) ||
+              plan.new_case_budget < 0) {
+            errors.push("Every Test Plan entry needs a non-negative new_case_budget.");
+          } else {
+            plannedCases += plan.new_case_budget;
+          }
+        });
+        criterionIds.forEach(function (id) {
+          if (!covered.has(id)) {
+            errors.push(id + " has no deterministic Test Plan coverage.");
+          }
+        });
+
+        requireExactKeys(
+          contract.test_budget,
+          ["max_new_test_cases"],
+          "test_budget",
+          errors
+        );
+        if (!contract.test_budget ||
+            !Number.isInteger(contract.test_budget.max_new_test_cases) ||
+            contract.test_budget.max_new_test_cases < 0) {
+          errors.push("test_budget.max_new_test_cases must be a non-negative integer.");
+        } else if (plannedCases > contract.test_budget.max_new_test_cases) {
+          errors.push("The sum of Test Plan case budgets exceeds the Contract's hard test cap.");
+        }
+
+        const nonGoals = Array.isArray(contract.non_goals) ? contract.non_goals : [];
+        const nonGoalIds = new Set();
+        nonGoals.forEach(function (goal, index) {
+          requireExactKeys(
+            goal,
+            ["id", "statement"],
+            "non_goals[" + index + "]",
+            errors
+          );
+          if (numericId(goal && goal.id, "NG") === null) {
+            errors.push("non_goals[" + index + "].id must match NG-001.");
+          } else if (nonGoalIds.has(goal.id)) {
+            errors.push("Non-Goal IDs must be unique.");
+          } else {
+            nonGoalIds.add(goal.id);
+          }
+          if (!goal || !nonEmptyString(goal.statement)) {
+            errors.push("Every Non-Goal needs a non-empty statement.");
+          }
+        });
+
+        const scopes = Array.isArray(contract.scope_paths) ? contract.scope_paths : [];
+        if (scopes.length === 0) {
+          errors.push("scope_paths must contain at least one changed-path allowance.");
+        }
+        scopes.forEach(function (scope, index) {
+          requireExactKeys(
+            scope,
+            ["path", "kind", "operations"],
+            "scope_paths[" + index + "]",
+            errors
+          );
+          const path = scope && scope.path;
+          if (!nonEmptyString(path) ||
+              path.startsWith("/") ||
+              path.includes("\\") ||
+              path.split("/").includes("..")) {
+            errors.push(
+              "scope_paths[" + index + "].path must be a normalized repository-relative path."
+            );
+          }
+          if (!scope || !["file", "tree"].includes(scope.kind)) {
+            errors.push("Every Scope Path kind must be file or tree.");
+          }
+          if (!scope || !Array.isArray(scope.operations) ||
+              scope.operations.length === 0 ||
+              scope.operations.some(function (operation) {
+                return !["add", "modify", "delete"].includes(operation);
+              })) {
+            errors.push("Every Scope Path needs add, modify, and/or delete operations.");
+          }
+        });
+        return Array.from(new Set(errors));
+      }
+
+      function markdownForContract(contract, digest, approvalRequired) {
+        const tick = String.fromCharCode(96);
+        const fence = tick.repeat(3);
+        const lines = [];
+        lines.push("## Contract · revision " + contract.revision);
+        lines.push("");
+        if (approvalRequired) {
+          lines.push(
+            "> **Awaiting Product Owner approval.** Add 👍 to this exact comment to freeze it."
+          );
+        } else {
+          lines.push(
+            "> **Approval gate disabled.** This valid comment freezes immediately when published."
+          );
+        }
+        lines.push("");
+        lines.push(
+          "Source: [" + contract.contract_id + "](" + contract.source.issue_url + ") at " +
+          tick + contract.source.issue_body_sha256 + tick
+        );
+        lines.push("");
+        lines.push("Digest: " + tick + digest + tick);
+        lines.push("");
+        lines.push("### Acceptance criteria");
+        lines.push("");
+        contract.acceptance_criteria.forEach(function (criterion) {
+          lines.push("- **" + criterion.id + "** — " + criterion.outcome);
+        });
+        lines.push("");
+        lines.push("### Test Plan");
+        lines.push("");
+        contract.test_plan.forEach(function (plan) {
+          lines.push(
+            "- **" + plan.id + "** · covers " + plan.covers.join(", ") +
+            " · up to " + plan.new_case_budget + " new cases"
+          );
+          lines.push("  - Setup: " + plan.setup);
+          lines.push("  - Action: " + plan.action);
+          lines.push("  - Pass: " + plan.oracle);
+        });
+        lines.push("");
+        lines.push("### Non-Goals");
+        lines.push("");
+        contract.non_goals.forEach(function (goal) {
+          lines.push("- **" + goal.id + "** — " + goal.statement);
+        });
+        lines.push("");
+        lines.push("### Test Budget");
+        lines.push("");
+        lines.push(
+          "- Hard maximum: **" + contract.test_budget.max_new_test_cases +
+          " new leaf test cases**."
+        );
+        lines.push("");
+        lines.push("### Scope Paths");
+        lines.push("");
+        contract.scope_paths.forEach(function (scope) {
+          lines.push(
+            "- " + tick + scope.path + tick + " (" + scope.kind + "; " +
+            scope.operations.join(", ") + ")"
+          );
+        });
+        if (contract.retired_criteria.length > 0) {
+          lines.push("");
+          lines.push("### Retired criteria");
+          lines.push("");
+          contract.retired_criteria.forEach(function (entry) {
+            lines.push(
+              "- **" + entry.id + "** → **" + entry.replaced_by + "** — " + entry.reason
+            );
+          });
+        }
+        lines.push("");
+        lines.push("<details>");
+        lines.push("<summary>Machine-readable Contract</summary>");
+        lines.push("");
+        lines.push(CONTRACT_START);
+        lines.push(fence + "json");
+        lines.push(JSON.stringify(contract, null, 2));
+        lines.push(fence);
+        lines.push(CONTRACT_END);
+        lines.push("");
+        lines.push("</details>");
+        return lines.join("\n");
+      }
+
+      function parseContractMarkdown(body) {
+        const start = body.indexOf(CONTRACT_START);
+        const end = body.indexOf(CONTRACT_END);
+        if (start < 0 || end < 0 || end <= start) {
+          throw new Error("Contract sentinel pair is missing or out of order.");
+        }
+        const fenced = body.slice(start + CONTRACT_START.length, end).trim();
+        const lines = fenced.split("\n");
+        if (lines.length < 3 ||
+            lines[0] !== String.fromCharCode(96).repeat(3) + "json" ||
+            lines[lines.length - 1] !== String.fromCharCode(96).repeat(3)) {
+          throw new Error("Contract sentinel must contain exactly one fenced JSON object.");
+        }
+        return JSON.parse(lines.slice(1, -1).join("\n"));
+      }
+
+      function prBodyFor(reference) {
+        const tick = String.fromCharCode(96);
+        const visible =
+          "Contract: [acme/widgets#123 · r" + reference.revision + "](" +
+          reference.url + ") · " + tick + reference.digest + tick;
+        const machine = {
+          url: reference.url,
+          digest: reference.digest,
+          revision: reference.revision
+        };
+        return [
+          "Closes #123",
+          "",
+          visible,
+          "",
+          PR_REF_START,
+          JSON.stringify(machine),
+          PR_REF_END
+        ].join("\n");
+      }
+
+      function parsePrReference(body) {
+        const start = body.indexOf(PR_REF_START);
+        const end = body.indexOf(PR_REF_END);
+        if (start < 0 || end < 0 || end <= start) {
+          throw new Error("PR Contract reference sentinel is missing.");
+        }
+        const payload = body.slice(start + PR_REF_START.length, end).trim();
+        const reference = JSON.parse(payload);
+        if (!body.includes(reference.url) || !body.includes(reference.digest)) {
+          throw new Error("The visible PR Contract link must match its machine reference.");
+        }
+        return reference;
+      }
+
+      function analyze(state) {
+        const contractComments = state.comments.filter(function (comment) {
+          return comment.kind === "contract";
+        }).sort(function (left, right) {
+          return left.id - right.id;
+        });
+        const canonical = [];
+        const aliases = [];
+        const invalid = [];
+        let previous = null;
+
+        contractComments.forEach(function (comment) {
+          if (comment.editedAt) {
+            invalid.push({
+              comment: comment,
+              errors: ["Contract comments are append-only; any edit timestamp invalidates it."]
+            });
+            return;
+          }
+          let parsed;
+          try {
+            parsed = parseContractMarkdown(comment.body);
+          } catch (error) {
+            invalid.push({ comment: comment, errors: [error.message] });
+            return;
+          }
+          const recomputed = contractDigest(parsed);
+          if (recomputed !== comment.digest) {
+            invalid.push({
+              comment: comment,
+              errors: ["The comment digest does not match its canonical machine payload."]
+            });
+            return;
+          }
+          if (previous &&
+              parsed.revision === previous.contract.revision &&
+              recomputed === previous.digest &&
+              canonicalize(parsed) === canonicalize(previous.contract)) {
+            aliases.push({ comment: comment, canonical: previous });
+            return;
+          }
+          const errors = validateContract(parsed, previous, state);
+          if (errors.length > 0) {
+            invalid.push({ comment: comment, errors: errors });
+            return;
+          }
+          const item = {
+            id: comment.id,
+            url: comment.url,
+            digest: recomputed,
+            contract: parsed,
+            reactions: comment.reactions || [],
+            comment: comment
+          };
+          canonical.push(item);
+          previous = item;
+        });
+
+        const candidate = canonical.length ? canonical[canonical.length - 1] : null;
+        const isApproved = function (item) {
+          return Boolean(item) &&
+            (!state.approvalRequired || item.reactions.includes(PRODUCT_OWNER));
+        };
+        const active = canonical.filter(isApproved).slice(-1)[0] || null;
+        let pipeline = "CONTRACTING";
+        let tone = "neutral";
+        let reason = "No valid Contract candidate exists.";
+
+        if (invalid.length > 0) {
+          pipeline = "ESCALATED";
+          tone = "bad";
+          reason = "A posted Contract is invalid or was edited.";
+        } else if (state.clarification.status === "waiting") {
+          pipeline = "NEEDS_CLARIFICATION";
+          tone = "warn";
+          reason = "The Contractor stopped instead of guessing product behavior.";
+        } else if (!candidate) {
+          pipeline = "CONTRACTING";
+          reason = "The Contractor may publish a mechanically valid candidate.";
+        } else if (state.implementationStarted && !isApproved(candidate)) {
+          pipeline = "ESCALATED";
+          tone = "bad";
+          reason = "The Product Owner withdrew approval after implementation began.";
+        } else if (!isApproved(candidate)) {
+          pipeline = "AWAITING_APPROVAL";
+          tone = "warn";
+          reason = "The latest valid candidate needs the Product Owner's reaction.";
+        } else if (!state.implementationStarted) {
+          pipeline = "READY_TO_IMPLEMENT";
+          tone = "good";
+          reason = "The latest candidate is valid and active.";
+        } else if (!state.frozenRef ||
+            candidate.url !== state.frozenRef.url ||
+            candidate.digest !== state.frozenRef.digest) {
+          pipeline = "ESCALATED";
+          tone = "bad";
+          reason = "The Contract chain changed after implementation began.";
+        } else {
+          pipeline = state.pullRequest ? "IMPLEMENTING · PR OPEN" : "IMPLEMENTING";
+          tone = "good";
+          reason = "The implementation is bound to the frozen Contract.";
+        }
+
+        let prValidation = null;
+        if (state.pullRequest && state.frozenRef) {
+          try {
+            const parsedReference = parsePrReference(state.pullRequest.body);
+            const exact =
+              parsedReference.url === state.frozenRef.url &&
+              parsedReference.digest === state.frozenRef.digest &&
+              parsedReference.revision === state.frozenRef.revision;
+            prValidation = {
+              valid: exact,
+              message: exact
+                ? "PR points to the exact frozen comment and digest."
+                : "PR Contract reference is stale or points somewhere else."
+            };
+          } catch (error) {
+            prValidation = { valid: false, message: error.message };
+          }
+        }
+
+        return {
+          pipeline: pipeline,
+          tone: tone,
+          reason: reason,
+          canonical: canonical,
+          aliases: aliases,
+          invalid: invalid,
+          candidate: candidate,
+          active: active,
+          approved: isApproved(candidate),
+          prValidation: prValidation
+        };
+      }
+
+      function withLast(state, tone, message) {
+        state.last = { tone: tone, message: message };
+        return state;
+      }
+
+      function publish(state, contract) {
+        if (state.implementationStarted) {
+          return withLast(
+            state,
+            "bad",
+            "Rejected: implementation already began. Scope changes must escalate or become follow-up work."
+          );
+        }
+        if (state.clarification.status === "waiting") {
+          return withLast(
+            state,
+            "bad",
+            "Rejected: the blocking clarification has not been answered."
+          );
+        }
+        const previous = latestCanonicalComment(state);
+        const errors = validateContract(contract, previous, state);
+        if (errors.length > 0) {
+          return withLast(
+            state,
+            "bad",
+            "Preflight rejected the draft: " + errors.join(" ")
+          );
+        }
+        const digest = contractDigest(contract);
+        const id = state.nextCommentId;
+        const url = state.issue.url + "#issuecomment-" + id;
+        const body = markdownForContract(contract, digest, state.approvalRequired);
+        try {
+          const reparsed = parseContractMarkdown(body);
+          if (canonicalize(reparsed) !== canonicalize(contract)) {
+            throw new Error("Rendered Markdown changed the machine payload.");
+          }
+        } catch (error) {
+          return withLast(state, "bad", "Renderer rejected its own comment: " + error.message);
+        }
+        state.comments.push({
+          kind: "contract",
+          id: id,
+          url: url,
+          author: CONTRACTOR,
+          body: body,
+          contract: clone(contract),
+          digest: digest,
+          reactions: [],
+          editedAt: null
+        });
+        state.nextCommentId += 1;
+        return withLast(
+          state,
+          state.approvalRequired ? "warn" : "good",
+          state.approvalRequired
+            ? "Revision " + contract.revision + " published and awaiting Product Owner approval."
+            : "Revision " + contract.revision + " published, validated, and active immediately."
+        );
+      }
+
+      function transition(current, action) {
+        let state = clone(current);
+        const analysis = analyze(state);
+
+        if (action.type === "RESET") {
+          return initialState(current.approvalRequired);
+        }
+
+        if (action.type === "REQUEST_CLARIFICATION") {
+          if (state.implementationStarted || analysis.candidate) {
+            return withLast(
+              state,
+              "bad",
+              "Rejected: clarification belongs before a Contract candidate, not after scope has been proposed."
+            );
+          }
+          if (state.clarification.status === "waiting") {
+            return withLast(state, "warn", "Clarification is already waiting on the Product Owner.");
+          }
+          const questions = [
+            {
+              id: "CQ-001",
+              question:
+                "Must invalid dry-run output match real sync byte-for-byte, or only preserve the exit code and error category?",
+              why:
+                "Exact wording would freeze argparse implementation detail as product behavior.",
+              recommendation:
+                "Require the same exit code and stable error category; allow wording to evolve."
+            }
+          ];
+          state.clarification = { status: "waiting", questions: questions, answer: null };
+          state.comments.push({
+            kind: "clarification",
+            id: state.nextCommentId,
+            author: CONTRACTOR,
+            questions: questions
+          });
+          state.nextCommentId += 1;
+          return withLast(
+            state,
+            "warn",
+            "Contractor stopped at a product choice it could not make safely."
+          );
+        }
+
+        if (action.type === "ANSWER_CLARIFICATION") {
+          if (state.clarification.status !== "waiting") {
+            return withLast(state, "bad", "Rejected: there is no open clarification.");
+          }
+          const answer =
+            "Use the recommendation: preserve the exit code and stable error category, not exact wording.";
+          state.clarification.status = "answered";
+          state.clarification.answer = answer;
+          state.comments.push({
+            kind: "answer",
+            id: state.nextCommentId,
+            author: PRODUCT_OWNER,
+            answer: answer
+          });
+          state.nextCommentId += 1;
+          return withLast(
+            state,
+            "good",
+            "Product Owner answered CQ-001. The Contractor can now produce a falsifiable criterion."
+          );
+        }
+
+        if (action.type === "PUBLISH_R1") {
+          return publish(state, baseContract(state));
+        }
+
+        if (action.type === "PUBLISH_R2") {
+          if (!analysis.candidate) {
+            return withLast(state, "bad", "Rejected: revision 2 needs a valid revision 1.");
+          }
+          return publish(state, nextValidContract(state));
+        }
+
+        if (action.type === "PUBLISH_CUSTOM") {
+          return publish(state, action.contract);
+        }
+
+        if (action.type === "PUBLISH_BAD_REUSE") {
+          const bad = badIdReuseContract(state);
+          const previous = latestCanonicalComment(state);
+          const errors = validateContract(bad, previous, state);
+          return withLast(
+            state,
+            "bad",
+            "Preflight rejected the draft before GitHub changed: " + errors.join(" ")
+          );
+        }
+
+        if (action.type === "DUPLICATE_RETRY") {
+          if (state.implementationStarted) {
+            return withLast(state, "bad", "Rejected: retries cannot append after implementation starts.");
+          }
+          if (!analysis.candidate) {
+            return withLast(state, "bad", "Rejected: there is no Contract post to replay.");
+          }
+          const original = analysis.candidate.comment;
+          const id = state.nextCommentId;
+          state.comments.push({
+            kind: "contract",
+            id: id,
+            url: state.issue.url + "#issuecomment-" + id,
+            author: CONTRACTOR,
+            body: original.body,
+            contract: clone(original.contract),
+            digest: original.digest,
+            reactions: [],
+            editedAt: null,
+            retryOf: original.id
+          });
+          state.nextCommentId += 1;
+          return withLast(
+            state,
+            "good",
+            "Exact duplicate reconciled: the earliest comment stays canonical and the replay is an alias."
+          );
+        }
+
+        if (action.type === "APPROVE_LATEST") {
+          if (!analysis.candidate) {
+            return withLast(state, "bad", "Rejected: there is no valid candidate to approve.");
+          }
+          if (!state.approvalRequired) {
+            return withLast(state, "good", "Approval is disabled; the valid candidate is already active.");
+          }
+          const target = state.comments.find(function (comment) {
+            return comment.id === analysis.candidate.id;
+          });
+          if (!target.reactions.includes(PRODUCT_OWNER)) {
+            target.reactions.push(PRODUCT_OWNER);
+          }
+          return withLast(
+            state,
+            "good",
+            "Product Owner's 👍 now binds revision " +
+              analysis.candidate.contract.revision +
+              " at " + analysis.candidate.digest.slice(0, 19) + "…"
+          );
+        }
+
+        if (action.type === "REMOVE_APPROVAL") {
+          if (!analysis.candidate || !state.approvalRequired) {
+            return withLast(state, "bad", "Rejected: no approval reaction is in force.");
+          }
+          const target = state.comments.find(function (comment) {
+            return comment.id === analysis.candidate.id;
+          });
+          if (!target.reactions.includes(PRODUCT_OWNER)) {
+            return withLast(state, "bad", "Rejected: the latest candidate is not approved.");
+          }
+          target.reactions = target.reactions.filter(function (actor) {
+            return actor !== PRODUCT_OWNER;
+          });
+          return withLast(
+            state,
+            state.implementationStarted ? "bad" : "warn",
+            state.implementationStarted
+              ? "Approval was withdrawn after work began; the run escalates."
+              : "Approval was withdrawn before work began; the candidate is pending again."
+          );
+        }
+
+        if (action.type === "TOGGLE_APPROVAL") {
+          if (state.comments.some(function (comment) {
+            return comment.kind === "contract";
+          }) || state.implementationStarted) {
+            return withLast(
+              state,
+              "bad",
+              "Rejected: approval policy is run configuration and cannot change around an existing Contract."
+            );
+          }
+          state.approvalRequired = !state.approvalRequired;
+          return withLast(
+            state,
+            "good",
+            "Approval gate is now " + (state.approvalRequired ? "ON." : "OFF.")
+          );
+        }
+
+        if (action.type === "START_IMPLEMENTATION") {
+          if (analysis.pipeline !== "READY_TO_IMPLEMENT") {
+            return withLast(
+              state,
+              "bad",
+              "Rejected: implementation requires the latest valid candidate to be active."
+            );
+          }
+          state.implementationStarted = true;
+          state.frozenRef = {
+            url: analysis.candidate.url,
+            digest: analysis.candidate.digest,
+            revision: analysis.candidate.contract.revision
+          };
+          return withLast(
+            state,
+            "good",
+            "Implementation started. The Contract chain is now closed and revision " +
+              state.frozenRef.revision + " is the definition of done."
+          );
+        }
+
+        if (action.type === "OPEN_PR_VALID" || action.type === "OPEN_PR_STALE") {
+          if (!state.implementationStarted || !state.frozenRef) {
+            return withLast(state, "bad", "Rejected: a PR cannot bind a Contract before implementation starts.");
+          }
+          const reference = clone(state.frozenRef);
+          if (action.type === "OPEN_PR_STALE") {
+            reference.digest = "sha256:" + "0".repeat(64);
+          }
+          state.pullRequest = {
+            number: 456,
+            url: "https://github.com/acme/widgets/pull/456",
+            body: prBodyFor(reference)
+          };
+          return withLast(
+            state,
+            action.type === "OPEN_PR_VALID" ? "good" : "bad",
+            action.type === "OPEN_PR_VALID"
+              ? "PR description carries the exact Contract permalink and digest."
+              : "Auditor rejects the PR: its visible and machine references agree with each other but not with the frozen Contract."
+          );
+        }
+
+        if (action.type === "EDIT_FROZEN") {
+          if (!state.frozenRef) {
+            return withLast(state, "bad", "Rejected: no frozen Contract exists to edit.");
+          }
+          const target = state.comments.find(function (comment) {
+            return comment.url === state.frozenRef.url;
+          });
+          target.editedAt = "after implementation began";
+          return withLast(
+            state,
+            "bad",
+            "Tamper detected. Even a typo fix invalidates the frozen comment and escalates."
+          );
+        }
+
+        return withLast(state, "bad", "Unknown prototype action: " + action.type);
+      }
+
+      return {
+        CONTRACTOR: CONTRACTOR,
+        PRODUCT_OWNER: PRODUCT_OWNER,
+        initialState: initialState,
+        transition: transition,
+        analyze: analyze,
+        nextValidContract: nextValidContract,
+        badIdReuseContract: badIdReuseContract,
+        validateContract: validateContract,
+        contractDigest: contractDigest,
+        markdownForContract: markdownForContract,
+        parseContractMarkdown: parseContractMarkdown,
+        parsePrReference: parsePrReference,
+        canonicalize: canonicalize
+      };
+    }());
+
+    const walkthroughs = [
+      {
+        id: "happy",
+        title: "Frozen happy path",
+        description:
+          "Watch a readable candidate become the exact definition of done, then verify that the PR carries the same identity.",
+        steps: [
+          ["PUBLISH_R1", "Contractor publishes a validated candidate"],
+          ["APPROVE_LATEST", "Product Owner approves that exact comment"],
+          ["START_IMPLEMENTATION", "Implementation begins and closes the chain"],
+          ["OPEN_PR_VALID", "PR links the exact permalink and digest"]
+        ]
+      },
+      {
+        id: "clarify",
+        title: "Clarify, do not guess",
+        description:
+          "The Contractor cannot decide whether diagnostic wording is product behavior, so it stops before producing a Contract.",
+        steps: [
+          ["REQUEST_CLARIFICATION", "Contractor asks one decision-shaped question"],
+          ["ANSWER_CLARIFICATION", "Product Owner chooses the recommended boundary"],
+          ["PUBLISH_R1", "Contractor publishes falsifiable outcomes"],
+          ["APPROVE_LATEST", "Product Owner freezes the result"]
+        ]
+      },
+      {
+        id: "correct",
+        title: "Append-only correction",
+        description:
+          "A semantic correction gets a new revision and a new criterion ID. The earlier approved Contract remains visible but cannot start work while its successor waits.",
+        steps: [
+          ["PUBLISH_R1", "Publish revision 1"],
+          ["APPROVE_LATEST", "Approve revision 1"],
+          ["PUBLISH_R2", "Publish revision 2 with AC-004 replacing AC-003"],
+          ["APPROVE_LATEST", "Approve the exact successor"],
+          ["START_IMPLEMENTATION", "Start against revision 2"]
+        ]
+      },
+      {
+        id: "tamper",
+        title: "Mutation after freeze",
+        description:
+          "GitHub permits comment edits, so the protocol must detect them rather than pretending the platform enforces immutability.",
+        steps: [
+          ["PUBLISH_R1", "Publish revision 1"],
+          ["APPROVE_LATEST", "Approve revision 1"],
+          ["START_IMPLEMENTATION", "Start implementation"],
+          ["EDIT_FROZEN", "Edit the frozen comment and force escalation"]
+        ]
+      },
+      {
+        id: "automatic",
+        title: "Approval gate off",
+        description:
+          "The same Contract protocol works without a Product Owner touch when trust is high; clarification remains mandatory when product behavior is ambiguous.",
+        steps: [
+          ["TOGGLE_APPROVAL", "Disable approval before contracting"],
+          ["PUBLISH_R1", "Publish a valid Contract that activates immediately"],
+          ["START_IMPLEMENTATION", "Start without a human reaction"]
+        ]
+      }
+    ];
+
+    let state = ContractModel.initialState();
+    let selectedWalkthrough = walkthroughs[0].id;
+    let walkthroughProgress = 0;
+    let editorErrors = [];
+    let editorDigest = null;
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function shortDigest(digest) {
+      if (!digest) {
+        return "—";
+      }
+      return digest.slice(0, 19) + "…";
+    }
+
+    function stateCell(label, value) {
+      return (
+        '<div class="state-cell"><span>' + escapeHtml(label) +
+        "</span><strong>" + escapeHtml(value) + "</strong></div>"
+      );
+    }
+
+    function renderState() {
+      const analysis = ContractModel.analyze(state);
+      const candidate = analysis.candidate;
+      const active = analysis.active;
+      const pr = analysis.prValidation;
+      document.getElementById("state-grid").innerHTML = [
+        stateCell("Pipeline", analysis.pipeline),
+        stateCell(
+          "Latest candidate",
+          candidate
+            ? "r" + candidate.contract.revision + " · " + shortDigest(candidate.digest)
+            : "None"
+        ),
+        stateCell(
+          "Active Contract",
+          active
+            ? "r" + active.contract.revision + " · " + shortDigest(active.digest)
+            : "None"
+        ),
+        stateCell("Approval gate", state.approvalRequired ? "ON · 👍 required" : "OFF"),
+        stateCell(
+          "Implementation",
+          state.implementationStarted ? "Started · chain closed" : "Not started"
+        ),
+        stateCell(
+          "PR reference",
+          !state.pullRequest ? "No PR" : pr && pr.valid ? "Exact match" : "Rejected"
+        )
+      ].join("");
+      const event = document.getElementById("last-event");
+      event.className = "event " + (state.last.tone === "neutral" ? "" : state.last.tone);
+      event.textContent = state.last.message + "  " + analysis.reason;
+    }
+
+    function issueComment() {
+      return [
+        '<article class="comment">',
+        '<div class="avatar">O</div>',
+        '<div class="comment-card">',
+        '<div class="comment-head"><span><strong>octavia</strong> opened this issue</span><span>Product Owner</span></div>',
+        '<div class="comment-body">',
+        '<h3>Add a read-only plan mode to sync</h3>',
+        '<h4>Request</h4>',
+        '<p>Add <code>--dry-run</code> to <code>my-team sync</code>. It should show what would change without writing target-repository files, and it should behave like the real sync when configuration is invalid.</p>',
+        '</div></div></article>'
+      ].join("");
+    }
+
+    function list(items, renderItem) {
+      return "<ul>" + items.map(renderItem).join("") + "</ul>";
+    }
+
+    function contractComment(comment, analysis) {
+      const contract = comment.contract;
+      const canonical = analysis.canonical.find(function (item) {
+        return item.id === comment.id;
+      });
+      const alias = analysis.aliases.find(function (item) {
+        return item.comment.id === comment.id;
+      });
+      const invalid = analysis.invalid.find(function (item) {
+        return item.comment.id === comment.id;
+      });
+      const approved =
+        canonical && (!state.approvalRequired ||
+          canonical.reactions.includes(ContractModel.PRODUCT_OWNER));
+      let status;
+      if (invalid) {
+        status = '<div class="callout bad"><strong>Invalid Contract.</strong> ' +
+          escapeHtml(invalid.errors.join(" ")) + "</div>";
+      } else if (alias) {
+        status = '<div class="callout"><strong>Reconciled retry.</strong> This byte-identical replay aliases the earlier canonical comment.</div>';
+      } else if (approved) {
+        status = '<div class="callout"><strong>Frozen and active.</strong> The Product Owner approved this exact payload.</div>';
+      } else if (state.approvalRequired) {
+        status = '<div class="callout warn"><strong>Awaiting Product Owner approval.</strong> Add 👍 to this exact comment to freeze it.</div>';
+      } else {
+        status = '<div class="callout"><strong>Frozen on publish.</strong> The configured approval gate is off.</div>';
+      }
+
+      const supersedes = contract.supersedes
+        ? "<p><strong>Supersedes:</strong> revision " +
+          escapeHtml(contract.supersedes.revision) + " at " +
+          '<span class="digest">' + escapeHtml(shortDigest(contract.supersedes.digest)) +
+          "</span></p>"
+        : "";
+      const retired = contract.retired_criteria.length
+        ? '<h4>Retired criteria</h4>' + list(contract.retired_criteria, function (entry) {
+          return "<li><strong>" + escapeHtml(entry.id) + "</strong> → <strong>" +
+            escapeHtml(entry.replaced_by) + "</strong> — " +
+            escapeHtml(entry.reason) + "</li>";
+        })
+        : "";
+
+      return [
+        '<article class="comment">',
+        '<div class="avatar bot">C</div>',
+        '<div class="comment-card ' + (invalid ? "invalid" : "") + '">',
+        '<div class="comment-head"><span><strong>' +
+          escapeHtml(comment.author) +
+          "</strong> commented</span><span>" +
+          (comment.editedAt ? '<span class="edited">edited after freeze</span>' : "Contractor") +
+          "</span></div>",
+        '<div class="comment-body">',
+        "<h3>Contract · revision " + escapeHtml(contract.revision) + "</h3>",
+        status,
+        "<p><strong>Source:</strong> acme/widgets#123 at " +
+          '<span class="digest">' + escapeHtml(shortDigest(contract.source.issue_body_sha256)) +
+          "</span></p>",
+        "<p><strong>Digest:</strong> " +
+          '<span class="digest">' + escapeHtml(comment.digest) + "</span></p>",
+        supersedes,
+        "<h4>Acceptance criteria</h4>",
+        list(contract.acceptance_criteria, function (criterion) {
+          return "<li><strong>" + escapeHtml(criterion.id) + "</strong> — " +
+            escapeHtml(criterion.outcome) + "</li>";
+        }),
+        "<h4>Test Plan</h4>",
+        list(contract.test_plan, function (plan) {
+          return "<li><strong>" + escapeHtml(plan.id) + "</strong> · covers " +
+            escapeHtml(plan.covers.join(", ")) + " · up to " +
+            escapeHtml(plan.new_case_budget) + " new cases<br><span style=\"color: var(--muted)\">" +
+            "<strong>Setup:</strong> " + escapeHtml(plan.setup) + "<br>" +
+            "<strong>Action:</strong> " + escapeHtml(plan.action) + "<br>" +
+            "<strong>Pass:</strong> " + escapeHtml(plan.oracle) + "</span></li>";
+        }),
+        "<h4>Non-Goals</h4>",
+        list(contract.non_goals, function (goal) {
+          return "<li><strong>" + escapeHtml(goal.id) + "</strong> — " +
+            escapeHtml(goal.statement) + "</li>";
+        }),
+        "<h4>Test Budget</h4>",
+        "<p>Hard maximum: <strong>" +
+          escapeHtml(contract.test_budget.max_new_test_cases) +
+          " new leaf test cases</strong>.</p>",
+        "<h4>Scope Paths</h4>",
+        list(contract.scope_paths, function (scope) {
+          return "<li><code>" + escapeHtml(scope.path) + "</code> (" +
+            escapeHtml(scope.kind) + "; " + escapeHtml(scope.operations.join(", ")) + ")</li>";
+        }),
+        retired,
+        '<details class="machine"><summary>Machine-readable Contract · canonical JSON</summary><pre>' +
+          escapeHtml(JSON.stringify(contract, null, 2)) + "</pre></details>",
+        '<span class="reaction ' + (approved ? "approved" : "") + '">👍 ' +
+          (approved ? "1 · octavia" : "0") + "</span>",
+        "</div></div></article>"
+      ].join("");
+    }
+
+    function clarificationComment(comment) {
+      return [
+        '<article class="comment">',
+        '<div class="avatar bot">C</div>',
+        '<div class="comment-card">',
+        '<div class="comment-head"><span><strong>' +
+          escapeHtml(comment.author) +
+          "</strong> commented</span><span>Contractor stopped</span></div>",
+        '<div class="comment-body">',
+        "<h3>Clarification required</h3>",
+        '<div class="callout warn">No Contract was published. These answers change the product obligation, so the Contractor will not choose them.</div>',
+        list(comment.questions, function (question) {
+          return "<li><strong>" + escapeHtml(question.id) + "</strong> — " +
+            escapeHtml(question.question) +
+            "<br><span style=\"color: var(--muted)\"><strong>Why it blocks:</strong> " +
+            escapeHtml(question.why) +
+            "<br><strong>Recommendation:</strong> " +
+            escapeHtml(question.recommendation) + "</span></li>";
+        }),
+        "</div></div></article>"
+      ].join("");
+    }
+
+    function answerComment(comment) {
+      return [
+        '<article class="comment">',
+        '<div class="avatar">O</div>',
+        '<div class="comment-card">',
+        '<div class="comment-head"><span><strong>' +
+          escapeHtml(comment.author) +
+          "</strong> replied</span><span>Product Owner</span></div>",
+        '<div class="comment-body"><p><strong>CQ-001:</strong> ' +
+          escapeHtml(comment.answer) + "</p></div>",
+        "</div></article>"
+      ].join("");
+    }
+
+    function prComment() {
+      if (!state.pullRequest) {
+        return "";
+      }
+      const analysis = ContractModel.analyze(state);
+      const valid = analysis.prValidation && analysis.prValidation.valid;
+      return [
+        '<div class="thread-label" style="margin-top: 24px;">Pull request · acme/widgets #456</div>',
+        '<article class="comment">',
+        '<div class="avatar bot">I</div>',
+        '<div class="comment-card ' + (valid ? "" : "invalid") + '">',
+        '<div class="comment-head"><span><strong>my-team-integrator[bot]</strong> inspected the PR description</span><span>' +
+          (valid ? "Exact Contract ref" : "Rejected ref") + "</span></div>",
+        '<div class="comment-body">',
+        '<div class="callout ' + (valid ? "" : "bad") + '">' +
+          escapeHtml(analysis.prValidation.message) + "</div>",
+        '<details class="machine" open><summary>Pull-request body</summary><pre>' +
+          escapeHtml(state.pullRequest.body) + "</pre></details>",
+        "</div></div></article>"
+      ].join("");
+    }
+
+    function renderThread() {
+      const analysis = ContractModel.analyze(state);
+      const comments = state.comments.map(function (comment) {
+        if (comment.kind === "contract") {
+          return contractComment(comment, analysis);
+        }
+        if (comment.kind === "clarification") {
+          return clarificationComment(comment);
+        }
+        return answerComment(comment);
+      }).join("");
+      document.getElementById("comment-thread").innerHTML =
+        issueComment() +
+        (comments || '<div class="empty">No Contractor comment yet. Use free play or a walkthrough.</div>') +
+        prComment();
+    }
+
+    function renderWalkthrough() {
+      document.getElementById("walkthrough-tabs").innerHTML = walkthroughs.map(function (item) {
+        return '<button class="tab ' +
+          (item.id === selectedWalkthrough ? "active" : "") +
+          '" data-walkthrough="' + escapeHtml(item.id) +
+          '" type="button" role="tab">' + escapeHtml(item.title) + "</button>";
+      }).join("");
+      const selected = walkthroughs.find(function (item) {
+        return item.id === selectedWalkthrough;
+      });
+      const steps = selected.steps.map(function (step, index) {
+        const className =
+          index < walkthroughProgress ? "done" :
+          index === walkthroughProgress ? "current" : "";
+        return '<button class="step-button ' + className +
+          '" data-step="' + index + '" type="button" ' +
+          (index > walkthroughProgress ? "disabled" : "") + ">" +
+          escapeHtml(step[1]) + "</button>";
+      }).join("");
+      document.getElementById("walkthrough-panel").innerHTML =
+        "<h3>" + escapeHtml(selected.title) + "</h3><p>" +
+        escapeHtml(selected.description) + '</p><div class="steps">' + steps + "</div>";
+    }
+
+    function currentPrevious() {
+      return ContractModel.analyze(state).candidate;
+    }
+
+    function loadEditor(contract) {
+      document.getElementById("draft-editor").value = JSON.stringify(contract, null, 2);
+      editorErrors = [];
+      editorDigest = null;
+      renderValidation();
+    }
+
+    function parseEditor() {
+      try {
+        return { contract: JSON.parse(document.getElementById("draft-editor").value), errors: [] };
+      } catch (error) {
+        return { contract: null, errors: ["JSON parse error: " + error.message] };
+      }
+    }
+
+    function validateEditor() {
+      const parsed = parseEditor();
+      if (parsed.errors.length) {
+        editorErrors = parsed.errors;
+        editorDigest = null;
+        renderValidation();
+        return null;
+      }
+      editorErrors = ContractModel.validateContract(parsed.contract, currentPrevious(), state);
+      editorDigest = editorErrors.length
+        ? null
+        : ContractModel.contractDigest(parsed.contract);
+      renderValidation();
+      return editorErrors.length ? null : parsed.contract;
+    }
+
+    function renderValidation() {
+      const container = document.getElementById("validation-result");
+      if (editorErrors.length) {
+        container.innerHTML =
+          "<h3>Rejected before publish</h3><ul>" +
+          editorErrors.map(function (error) {
+            return "<li>" + escapeHtml(error) + "</li>";
+          }).join("") + "</ul>";
+      } else if (editorDigest) {
+        container.innerHTML =
+          '<h3 style="color: var(--good)">Valid candidate</h3>' +
+          "<p>The canonical payload parses, the revision chain closes, all criteria have proof, and budgets/scopes are well formed.</p>" +
+          '<p class="digest">' + escapeHtml(editorDigest) + "</p>";
+      } else {
+        container.innerHTML =
+          "<h3>Not validated yet</h3><p>Edit the payload or load a prepared case, then run the same preflight the Contractor uses before posting.</p>";
+      }
+    }
+
+    function renderAll() {
+      renderState();
+      renderThread();
+      renderWalkthrough();
+      renderValidation();
+    }
+
+    function dispatch(type) {
+      state = ContractModel.transition(state, { type: type });
+      renderAll();
+    }
+
+    document.addEventListener("click", function (event) {
+      const actionButton = event.target.closest("[data-action]");
+      if (actionButton) {
+        dispatch(actionButton.dataset.action);
+        return;
+      }
+      const tab = event.target.closest("[data-walkthrough]");
+      if (tab) {
+        selectedWalkthrough = tab.dataset.walkthrough;
+        walkthroughProgress = 0;
+        state = ContractModel.initialState(true);
+        state.last = {
+          tone: "neutral",
+          message: "Walkthrough reset the simulated issue."
+        };
+        loadEditor(ContractModel.nextValidContract(state));
+        renderAll();
+        return;
+      }
+      const stepButton = event.target.closest("[data-step]");
+      if (stepButton) {
+        const selected = walkthroughs.find(function (item) {
+          return item.id === selectedWalkthrough;
+        });
+        const index = Number(stepButton.dataset.step);
+        if (index === walkthroughProgress) {
+          dispatch(selected.steps[index][0]);
+          walkthroughProgress += 1;
+          renderWalkthrough();
+        }
+      }
+    });
+
+    document.getElementById("reset-button").addEventListener("click", function () {
+      state = ContractModel.initialState(true);
+      walkthroughProgress = 0;
+      loadEditor(ContractModel.nextValidContract(state));
+      renderAll();
+    });
+
+    document.getElementById("load-valid").addEventListener("click", function () {
+      loadEditor(ContractModel.nextValidContract(state));
+    });
+
+    document.getElementById("load-invalid").addEventListener("click", function () {
+      loadEditor(ContractModel.badIdReuseContract(state));
+    });
+
+    document.getElementById("validate-draft").addEventListener("click", function () {
+      validateEditor();
+    });
+
+    document.getElementById("publish-draft").addEventListener("click", function () {
+      const contract = validateEditor();
+      if (contract) {
+        state = ContractModel.transition(state, {
+          type: "PUBLISH_CUSTOM",
+          contract: contract
+        });
+        loadEditor(ContractModel.nextValidContract(state));
+        renderAll();
+      }
+    });
+
+    loadEditor(ContractModel.nextValidContract(state));
+    renderAll();
+  </script>
+</body>
+</html>
