@@ -51,9 +51,10 @@ mutate mechanically stop rather than also dispatching, because two mutations in 
 saved tick at the cost of a crash window — and ticks are free precisely because there is nothing
 to reload.
 
-**Nothing durable stores a harness session id.** The seam mints one, uses it at most once inside
-a single action to write a handoff, and returns it as telemetry. A crash mid-action orphans the
-session and the next tick starts fresh: slower, never wrong.
+**Nothing durable stores a harness session id.** The seam mints a fresh identity for each session
+inside an Action's in-memory [continuity chain](./0011-one-action-owns-its-continuity-chain.md) and
+returns the identities as telemetry. A crash mid-Action orphans the chain and the next tick starts
+fresh: slower, never wrong.
 
 **Counters are derived or they do not exist.** Judge rounds come from the reviews list,
 CI-repair rounds from distinct failing head SHAs, implementation rounds from `convert_to_draft`

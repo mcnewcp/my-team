@@ -59,7 +59,9 @@ agent is told to act on and their approval counts; no GitHub App **Principal** i
 _Avoid_: allowlist, trusted user, maintainer
 
 **Action**:
-One unit of work a tick dispatches: one role, one definition of done. Normally a single harness session running a single skill — a session stopped at the **smart zone** is resumed once to write a **handoff**, which is the tail of the same action rather than a new one. A tick may wrap an action with mechanical steps the orchestrator performs itself, such as pushing the branch afterwards. Several actions belong to the same role: the implementer runs again on every revision round.
+One unit of work a tick dispatches: one **role**, one definition of done. A Harness-backed Action
+owns its whole continuity chain — each stopped session writes a **handoff** for a fresh successor —
+and ends only when the Role finishes or fails; several Actions may belong to the same Role.
 _Avoid_: job, step, task
 
 **Round**:
@@ -127,11 +129,15 @@ What a **role** says at the end of an **action** — the closing message the orc
 _Avoid_: summary, output, final message, log
 
 **Smart zone**:
-The span of context within which a model still works well, far below the window's true ceiling. One absolute token count, set once for the whole team; crossing it is what stops a dispatch and calls for a **handoff**.
+The span of context within which a model still works well, far below the window's true ceiling.
+Crossing its absolute token count stops the current Harness session and calls for a **handoff**
+without ending the **action**.
 _Avoid_: context limit, budget, cap, threshold
 
 **Handoff**:
-A context-complete document an agent writes when the orchestrator stops it at the **smart zone**, addressed to the next copy of its own role. Lives in the workspace rather than in git, and is never an input to an orchestrator decision.
+A context-complete document a stopped Harness session writes for a fresh copy of its own **role**
+to continue the same **action**. Lives in the workspace rather than in git, and is never an input
+to an orchestrator decision.
 _Avoid_: checkpoint, summary, context dump
 
 **Verify by observation**:
