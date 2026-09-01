@@ -172,9 +172,9 @@ What a **role** says at the end of an **action** — the closing message the orc
 _Avoid_: summary, output, final message, log
 
 **Smart zone**:
-The span of context within which a model still works well, far below the window's true ceiling.
-Crossing its absolute token count stops the current Harness session and calls for a **handoff**
-without ending the **action**.
+The target-repo-wide span of context within which a model is expected to work well, far below its
+window's true ceiling. One configurable absolute token count applies to every Harness-backed
+**action**; crossing it calls for a **handoff** without ending the action.
 _Avoid_: context limit, budget, cap, threshold
 
 **Handoff**:
