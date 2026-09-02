@@ -1,7 +1,7 @@
 # The label act is the authorization
 
 > **Supersession note:** [ADR-0013](./0013-pipeline-state-is-a-label-backed-cursor.md) retains the
-> trusted-human label act as Authorization but narrows its gate to ordinary pipeline advancement
+> trusted-human label act as Authorization but narrows its boundary to ordinary pipeline advancement
 > and dispatch from a settled nonterminal State. Transition recovery, quarantine, explicitly
 > directed State repair and terminal bookkeeping may act while unauthorized; ADR-0013 replaces the
 > old ladder row numbers below. Reauthorization from `escalated` must follow that occurrence's

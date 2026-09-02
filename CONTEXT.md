@@ -26,7 +26,7 @@ _Avoid_: sandbox, scratch repo, test repo
 ### The loop
 
 **Tick**:
-One observation of the target repo's state followed by exactly one action, then exit. The orchestrator's primitive unit of work.
+One **Observation** of the target repo followed by at most one **Action**, then exit. The orchestrator's primitive unit of work.
 _Avoid_: step, cycle, iteration
 
 **Harness**:
@@ -198,7 +198,7 @@ _Avoid_: attempt, round, phase instance
 **State corruption**:
 A State-label set that is neither an untouched issue, one attributable settled State, nor one
 attributable adjacent State transition. It is quarantined without changing those labels or
-dispatching work; artifacts never guess a replacement, and the Product Owner must direct a
+dispatching work; artifacts never guess a replacement, and the Product owner must direct a
 **State repair** before ordinary reauthorization.
 _Avoid_: ambiguous State, inferred State, best-effort recovery
 

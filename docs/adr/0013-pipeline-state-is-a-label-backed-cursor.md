@@ -16,7 +16,7 @@ CI waits, conflicts, invalid authorization and exhausted limits derive Actions i
 State labels.
 
 The orchestrator alone changes State, under whichever control **Principal** the authority model
-assigns later. Generative **Roles** produce attributable artifacts and the **Product Owner**
+assigns later. Generative **Roles** produce attributable artifacts and the **Product owner**
 performs approval or authorization acts; neither moves the cursor. Keeping the label on the issue
 avoids a mid-run carrier change, while refusing a pull-request mirror avoids two authorities that
 GitHub cannot update transactionally.
@@ -28,7 +28,7 @@ that occurrence, its entry artifact or the row's explicit ordering boundary; an 
 not become current merely because it has the right shape. This uses direct transition history to
 recover the incoming edge without replaying the whole pipeline or writing another marker. An
 explicit State repair is the sole exception: a fresh target application made under the Product
-Owner's direction, plus the target's validated non-Authorization bindings, substitutes for the
+owner's direction, plus the target's validated non-Authorization bindings, substitutes for the
 adjacent source edge that quarantine cannot supply.
 
 State names the responsibility that owns the next work and is entered before its Action begins.
@@ -130,7 +130,7 @@ there is no valid source State, State-corruption quarantine does not add `escala
 merge quarantine likewise preserves even a valid singleton or adjacent pair because terminal
 cross-object ordering cannot be reconstructed. Either quarantine ensures the human Queue and an
 attributable notice-completion anchor on the issue timeline while making its human-readable notice
-available and dispatching nothing. The Product Owner must direct an explicit orchestrator-mediated
+available and dispatching nothing. The Product owner must direct an explicit orchestrator-mediated
 repair before ordinary reauthorization can resume.
 
 The existing triage labels are a **Queue projection**, not another source of State. In ordinary
@@ -143,16 +143,16 @@ orchestrator-authored queue changes are distinguishable by actor and never autho
 projection can follow ownership without weakening the human admission boundary.
 
 Each human-owned State has one attributable exit act, and none requires parsing prose.
-`needs-clarification` returns to `contracting` on the first new Product Owner issue comment after
+`needs-clarification` returns to `contracting` on the first new Product owner issue comment after
 the canonical Contractor clarification request; only the comment's author, ID and ordering enter
 the machine, while its body is prompt input. On the current valid Contract Candidate, Product
-Owner `+1` advances `awaiting-contract-approval` to `implementing`, while `-1` returns it to
+owner `+1` advances `awaiting-contract-approval` to `implementing`, while `-1` returns it to
 `contracting`; both reactions together escalate. `escalated` returns to its interrupted State only
 on a trusted-human `ready-for-agent` application ordered after that occurrence's notice-completion
 anchor in the issue timeline, which opens a new Authorization epoch.
 Quarantine rejects ordinary reauthorization until repair has produced one valid target State.
 
-A Product Owner response or reaction remains current when it arrives after its bound clarification
+A Product owner response or reaction remains current when it arrives after its bound clarification
 request or on its current candidate but before the corresponding human-owned State settles.
 Artifact binding and within-timeline ordering, not destination-label time, establish its freshness.
 
@@ -222,9 +222,9 @@ lets a compatible snapshot stand in for preserved direct evidence.
 | Stored State | Direct Entry invariant | Exit evidence and State-local Action |
 | --- | --- | --- |
 | no prior State | The issue is open and coherently observed; Authorization is valid; no State label has ever existed; and no pipeline branch, pull request or protocol artifact exists. | Eligibility selects the one Action of adding `contracting`. Any pipeline artifact makes this corruption, never initialization by inference. |
-| `contracting` | The occurrence follows untouched Authorization, the first Product Owner response to its entering clarification request, or `-1` on its entering Contract Candidate. The Authorization epoch, issue identity and source body remain valid. | The latest valid canonical candidate created after this occurrence selects `awaiting-contract-approval`, or `implementing` when approval is disabled. One current Contractor clarification request selects `needs-clarification`. If neither exists, dispatch Contractor; if both or either is malformed, escalate. |
-| `needs-clarification` | Its canonical, unedited Contractor request remains valid and no competing candidate from the source occurrence exists. | The first later Product Owner issue comment selects `contracting`; otherwise wait. Only author, event ID and ordering are machine input, while the body is prompt input. |
-| `awaiting-contract-approval` | Approval is enabled and the latest valid pre-freeze Contract chain, candidate and source-body binding remain valid. A contiguous successor becomes current and makes older reactions stale. | On the current candidate, Product Owner `+1` alone selects `implementing`, `-1` alone selects `contracting`, neither waits and both escalate. Other actors' reactions do not move State. |
+| `contracting` | The occurrence follows untouched Authorization, the first Product owner response to its entering clarification request, or `-1` on its entering Contract Candidate. The Authorization epoch, issue identity and source body remain valid. | The latest valid canonical candidate created after this occurrence selects `awaiting-contract-approval`, or `implementing` when approval is disabled. One current Contractor clarification request selects `needs-clarification`. If neither exists, dispatch Contractor; if both or either is malformed, escalate. |
+| `needs-clarification` | Its canonical, unedited Contractor request remains valid and no competing candidate from the source occurrence exists. | The first later Product owner issue comment selects `contracting`; otherwise wait. Only author, event ID and ordering are machine input, while the body is prompt input. |
+| `awaiting-contract-approval` | Approval is enabled and the latest valid pre-freeze Contract chain, candidate and source-body binding remain valid. A contiguous successor becomes current and makes older reactions stale. | On the current candidate, Product owner `+1` alone selects `implementing`, `-1` alone selects `contracting`, neither waits and both escalate. Other actors' reactions do not move State. |
 | `implementing` | First entry follows the current candidate's approval or approval-disabled publication and freezes it; later ordinary entries follow a failed Audit whose recorded producer was `implementing`. The frozen spine remains valid. | Before the canonical PR exists, dispatch Implementer until the branch/merge contract's PR-creation predicate holds, then perform the abstract open-draft-PR Action. For an established non-draft PR without a current latch opening, perform the abstract open-draft-latch Action; with the current latch open and PR draft, dispatch Implementer. A fresh valid producer completion selects `auditing`. |
 | `auditing` | A fresh completion from `implementing` or `remediating` identifies the producer to which failure returns; the canonical PR and frozen spine remain valid. | Until one valid terminal result exists for the current-head Audit identity, start, wait for or resume that single Audit Action as its protocol requires. A valid `success` selects `reviewing`; a valid `failure` selects the recorded producer State. A coherent valid head advance changes the Audit identity and makes prior-head runs historical. |
 | `reviewing` | The occurrence follows one accepted passing Audit at coherent head H; H remains current and the valid prior Ledger determines the exact delta base. | With no protocol-valid Reviewer artifact bound to that passing Audit identity, dispatch Reviewer. Current `CHANGES_REQUESTED` selects `judging`. Current `APPROVED` first selects the deterministic Ledger setter while its round is absent there, then selects `integrating` once incorporated. |
@@ -246,20 +246,17 @@ non-draft and an expected-producer `ready_for_review` event ordered after its op
 timeline. Older ready events cannot complete a later cycle.
 
 The Audit protocol's candidate identity must bind the expected Principal, canonical pull request,
-frozen Contract, coherent head and `auditing` occurrence; its later contract chooses the exact
-encoding and report schema. Recovery reads the complete run list rather than a rollup. The newest
-exact retry alias is effective because GitHub gates on the newest created run; an older
-non-terminal alias cannot block a newer terminal one. Differing terminal reports or conclusions
-for one identity conflict and escalate. A terminal Audit accepts only the protocol's valid
-`success` or `failure`; every other conclusion is malformed. A non-terminal run retains
-`auditing` while the owning Audit Action waits or resumes it without inventing another State.
+frozen Contract, coherent head and `auditing` occurrence. Its later contract chooses how evidence
+is collected, retried and encoded, which terminal conclusions are valid, and how conflicts are
+recognized. Until that contract yields one valid terminal outcome, `auditing` retains ownership
+while its Audit Action starts, waits or resumes without inventing another State.
 
 Raw Reviewer artifacts, not `reviewDecision`, supply review evidence. ADR-0012's exact retries
 alias the earliest identical artifact, stale samples consume no Review round, and divergent or
 malformed current samples escalate. A partial Judge transaction likewise retains `judging`; its
 idempotent setter completes the same transaction rather than starting another one.
 
-State repair is an explicitly invoked exceptional Action. For State corruption, the Product Owner
+State repair is an explicitly invoked exceptional Action. For State corruption, the Product owner
 direction names one non-`escalated` target; for an unexpected merge, it can name only `merged`.
 One repair invocation supplies the same direction and target to every tick, and its CLI shape is
 decided later. If it stops before the fresh target application, ordinary ticks remain quarantined
@@ -289,7 +286,7 @@ occurrences and incoming edges, the interrupted State, current Contract revision
 binding, canonical branch and pull request, current head, producer return target, Audit candidate,
 Review-round identity and delta base, Ledger blockers and round count, integration readiness and
 the next ordinary Action are derived from native events and protocol artifacts. The repair target
-is exceptional Product Owner input resupplied on every repair tick. Protocol artifacts may bind
+is exceptional Product owner input resupplied on every repair tick. Protocol artifacts may bind
 the derived identities needed to prove their own Actions, but no extra cursor stores an independent
 copy.
 
@@ -327,10 +324,28 @@ Each tick evaluates one fresh Observation and selects at most one Action in this
 This ordering gives human controls and irreversible terminal truth precedence without letting an
 artifact-dependent mutation use an incoherent snapshot.
 
-## Considered Options
+## Considered options
 
-Treating the label as a projection of artifact-derived State preserves the former pure derivation
-model but leaves no durable cursor. Trusting the label without corroboration turns stale or
-malformed bookkeeping into proof of work. Moving State to the pull request fails before one exists,
-and mirroring it creates cross-object disagreement. Letting a Role advance its own label makes the
-generative actor self-certify the fact that should release the next Role.
+**Derive State entirely from artifacts.** This preserves the former pure-derivation model but
+leaves no durable ownership cursor when several facts are simultaneously true.
+
+**Trust the State label without corroboration.** This turns stale or malformed bookkeeping into
+proof that work completed.
+
+**Store State on the pull request or mirror it across both objects.** A pull request does not exist
+at the start of the pipeline, while mirroring creates a new cross-object reconciliation problem.
+
+**Let each Role advance its own label.** This makes the generative actor self-certify the fact that
+should release the next Role.
+
+## Consequences
+
+State recovery needs no local checkpoint, but every occurrence must remain bound to native GitHub
+evidence before its cursor can advance. Transitions take multiple ticks and therefore more API
+round trips; in return, every mutation is attributable, reobservable and safe to resume after a
+crash.
+
+Corrupt State labels and unexpected merges cannot be guessed through. They stop automated work
+and require explicit Product owner repair, while concrete credentials, artifact encodings, Audit
+mechanics, branch and merge policy, and CLI behavior remain decisions of their downstream
+contracts.

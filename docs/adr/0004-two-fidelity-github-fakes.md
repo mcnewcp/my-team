@@ -1,5 +1,11 @@
 # Two fake GitHubs, bound to the real one by a contract test
 
+> **Supersession note:** [ADR-0013](./0013-pipeline-state-is-a-label-backed-cursor.md) supersedes
+> the historical row counts, derived-State examples and `AMBIGUOUS` State below. The two-fake
+> testing boundary remains: hand-built Observations isolate pure decision logic, a stateful world
+> tests convergence across mutations, and captured GitHub payloads bind both to reality. The
+> replacement spec will supply the new State-register and State-local Ladder cases.
+
 The ladder tests hand-build `Observation` values through a builder; the convergence tests
 drive a stateful in-memory world that mutations change. These are deliberately two
 different fakes, because they are answering two different questions — and because the
