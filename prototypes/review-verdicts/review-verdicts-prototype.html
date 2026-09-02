@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PROTOTYPE — Distinct App review verdicts and mergeability</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #5f6b7d;
+      --line: #d8deea;
+      --paper: #ffffff;
+      --soft: #f5f7fb;
+      --accent: #3159c6;
+      --accent-soft: #eef2ff;
+      --good: #18794e;
+      --good-soft: #eaf8f0;
+      --warn: #946200;
+      --warn-soft: #fff8df;
+      --bad: #b42318;
+      --bad-soft: #fff0ee;
+      --shadow: 0 12px 32px rgba(23, 32, 51, 0.08);
+      color-scheme: light;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(49, 89, 198, 0.09), transparent 30rem),
+        #f8f9fc;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button { font: inherit; cursor: pointer; }
+    code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    a { color: var(--accent); }
+    h1, h2, h3, p { margin-top: 0; }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 42px 0 72px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      margin-bottom: 12px;
+      padding: 5px 10px;
+      border: 1px solid #f1b8b3;
+      border-radius: 999px;
+      color: var(--bad);
+      background: var(--bad-soft);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 980px;
+      margin-bottom: 12px;
+      font-size: clamp(32px, 5vw, 54px);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+
+    .hero > p {
+      max-width: 930px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .question, .section, .verdict {
+      margin-top: 22px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .question {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+      gap: 26px;
+    }
+
+    @media (max-width: 860px) {
+      .question { grid-template-columns: 1fr; }
+    }
+
+    .facts {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--soft);
+      font-size: 13px;
+    }
+
+    .facts dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
+    .facts dt { color: var(--muted); }
+    .facts dd { margin: 0; font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; word-break: break-all; }
+
+    h2 { font-size: 22px; letter-spacing: -0.02em; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+    tbody tr:last-child td { border-bottom: none; }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .pill.blocked { color: var(--bad); background: var(--bad-soft); }
+    .pill.clean { color: var(--good); background: var(--good-soft); }
+    .pill.neutral { color: var(--muted); background: var(--soft); }
+
+    .stepper { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+    .stepper button {
+      padding: 8px 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--paper);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .stepper button[aria-pressed="true"] {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr); gap: 20px; }
+    @media (max-width: 860px) { .stage { grid-template-columns: 1fr; } }
+
+    .state-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--soft);
+    }
+    .state-card h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    .state-row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+    .state-row:last-child { border-bottom: none; }
+    .state-row span:last-child { font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; text-align: right; }
+
+    pre {
+      margin: 0;
+      padding: 14px;
+      border-radius: 10px;
+      background: #101828;
+      color: #e6edf7;
+      font-size: 12.5px;
+      overflow-x: auto;
+    }
+
+    .callout {
+      margin-top: 16px;
+      padding: 16px 18px;
+      border-left: 4px solid var(--warn);
+      border-radius: 0 10px 10px 0;
+      background: var(--warn-soft);
+      font-size: 14px;
+    }
+    .callout.bad { border-left-color: var(--bad); background: var(--bad-soft); }
+    .callout.good { border-left-color: var(--good); background: var(--good-soft); }
+    .callout strong { display: block; margin-bottom: 4px; }
+
+    .verdict { border-color: var(--accent); background: var(--accent-soft); }
+    .verdict h2 { color: var(--accent); }
+    .verdict ol { margin: 0; padding-left: 20px; }
+    .verdict li { margin-bottom: 10px; }
+
+    .scroll { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div class="eyebrow">Prototype — throwaway</div>
+      <h1>Distinct App review verdicts and mergeability</h1>
+      <p>
+        Primary-source record for <strong>my-team#104</strong>. Three distinct GitHub App
+        Principals — author, Reviewer and Judge — driven against a real fixture pull request to
+        establish whether a Reviewer's <code>REQUEST_CHANGES</code> can leave a platform blocker
+        that the Judge cannot clear. Platform evidence only; it chooses no round architecture.
+      </p>
+    </header>
+
+    <section class="question">
+      <div>
+        <h2>The question</h2>
+        <p>
+          In a real fixture pull request, how does <code>REQUEST_CHANGES</code> from a distinct
+          Reviewer GitHub App Principal affect mergeability under the intended v0.1 protection
+          settings — and what is the least permission or policy with which the Judge can clear it?
+        </p>
+        <p style="margin-bottom:0">
+          The arms below sweep the relevant zero/one required-approval and stale-review settings,
+          then test dismissal authority. Every row is a logged REST or GraphQL response; nothing
+          here is inferred from documentation.
+        </p>
+      </div>
+      <div class="facts">
+        <dl>
+          <dt>Ran</dt><dd>2026-09-02, 13:46–17:03 UTC</dd>
+          <dt>REST version</dt><dd>2026-03-10</dd>
+          <dt>Fixture</dt><dd>mcnewcp/my-team-fixtures PR #4</dd>
+          <dt>PR author</dt><dd>implementer-my-team[bot]</dd>
+          <dt>Head SHA</dt><dd>8e41294a87bd3dae54889545be6db43e37761f5b</dd>
+          <dt>2nd commit</dt><dd>ee21028adecd79c343fcad2856e97e5c3d04868f</dd>
+          <dt>App IDs</dt><dd>impl 4652114 · rev 4608397 · judge 4652145</dd>
+          <dt>Calls logged</dt><dd>102</dd>
+        </dl>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>The three Principals</h2>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Principal</th><th>Installation</th><th>Grant at time of use</th><th>Acted as</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>implementer-my-team[bot]</code></td>
+              <td>155006997</td>
+              <td>contents:write, issues:read, metadata:read, pull_requests:write</td>
+              <td>Branch, commits, and the pull request itself</td>
+            </tr>
+            <tr>
+              <td><code>reviewer-my-team[bot]</code></td>
+              <td>154043927</td>
+              <td>Arms A–C: contents:<strong>read</strong><br>Arms D–S: contents:<strong>write</strong></td>
+              <td><code>REQUEST_CHANGES</code></td>
+            </tr>
+            <tr>
+              <td><code>judge-my-team[bot]</code></td>
+              <td>155007556</td>
+              <td>Varied across arms — the independent variable</td>
+              <td><code>APPROVE</code> and review dismissal</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <strong>Confound controlled and named</strong>
+        A pre-existing GitGuardian check on the repository sat <code>in_progress</code> during arm
+        A, which is the sole reason that arm reads <code>unstable</code> rather than
+        <code>clean</code>. It completed <code>success</code> before arm B and never gated merge.
+        The discriminator throughout is <code>blocked</code> versus not-blocked.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Walk the arms</h2>
+      <div class="stepper" id="stepper"></div>
+      <div class="stage">
+        <div>
+          <p id="arm-desc" style="font-size:15px"></p>
+          <pre id="arm-evidence"></pre>
+        </div>
+        <div class="state-card">
+          <h3>Observed projection</h3>
+          <div id="arm-state"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Every arm at a glance</h2>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Arm</th><th>Reviewer grant</th><th>Protection</th>
+              <th>reviewDecision</th><th>mergeStateStatus</th>
+            </tr>
+          </thead>
+          <tbody id="summary-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>The two causal findings</h2>
+
+      <h3>1 · A Reviewer App blocks only when it holds <code>Contents: write</code></h3>
+      <p>
+        The same App, submitting the same verdict against the same protection, is inert with
+        <code>contents: read</code> and a hard blocker with <code>contents: write</code>.
+        <code>authorAssociation</code> stayed <code>NONE</code> in <em>both</em> cases, so that
+        field cannot be used to predict whether a verdict will bite.
+      </p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Reviewer grant</th><th>Protection</th><th>reviewDecision</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td>contents: read</td><td>count=0</td><td><code>null</code></td><td><span class="pill clean">CLEAN</span></td></tr>
+            <tr><td>contents: read</td><td>count=1 + App approval</td><td><code>APPROVED</code></td><td><span class="pill clean">CLEAN</span> — merged straight over a live changes-requested</td></tr>
+            <tr><td>contents: write</td><td>count=0</td><td><code>CHANGES_REQUESTED</code></td><td><span class="pill blocked">BLOCKED</span></td></tr>
+            <tr><td>contents: write</td><td>count=1 + standing approval</td><td><code>CHANGES_REQUESTED</code></td><td><span class="pill blocked">BLOCKED</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:24px">2 · A review's weight is evaluated live, not frozen at submission</h3>
+      <p>
+        Review <code>5090488756</code> — one <code>APPROVED</code> from the Judge, submitted once
+        at 13:48:57Z and never resubmitted — was toggled between counting and not counting purely
+        by changing the Judge App's permissions underneath it. An A→B→A reversal on a single
+        unchanged artifact:
+      </p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Time</th><th>Judge grant</th><th>reviewDecision at count=1</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td>13:48:57Z</td><td>contents:write, issues:write, pull_requests:write</td><td><code>APPROVED</code></td><td><span class="pill clean">CLEAN</span></td></tr>
+            <tr><td>16:53:39Z</td><td>metadata:read, pull_requests:write</td><td><code>REVIEW_REQUIRED</code></td><td><span class="pill blocked">BLOCKED</span></td></tr>
+            <tr><td>17:03:29Z</td><td>contents:write, metadata:read, pull_requests:write</td><td><code>APPROVED</code></td><td><span class="pill clean">CLEAN</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout bad">
+        <strong>Operational consequence</strong>
+        Narrowing or widening an App's repository permissions silently changes the mergeability of
+        pull requests that are already open, with no event on the pull request and no change to any
+        review artifact. Permission changes are retroactive across the whole open queue.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Dismissal authority</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Attempt</th><th>Judge grant / policy</th><th>Response</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Dismiss a blocking review</td>
+              <td>metadata:read + pull_requests:write, no admin, no dismissal policy</td>
+              <td><span class="pill clean">200</span> — dismissed</td>
+            </tr>
+            <tr>
+              <td>Add Judge App to <code>dismissal_restrictions.apps</code></td>
+              <td>Repo admin (user token)</td>
+              <td><span class="pill blocked">422</span> <code>Only organization repositories can have users and team restrictions</code></td>
+            </tr>
+            <tr>
+              <td>Re-dismiss an already-dismissed review</td>
+              <td>Judge installation token</td>
+              <td><span class="pill neutral">422</span> <code>Can not dismiss a dismissed pull request review</code> — an artifact-state error, not a permission signal</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout good">
+        <strong>Least permission established</strong>
+        <code>Pull requests: write</code> plus mandatory <code>Metadata: read</code> is sufficient
+        for the Judge to dismiss a blocking Reviewer verdict. No administration grant, no repository
+        admin role, and no <code>dismissal_restrictions</code> entry is required — which matters,
+        because that policy lever does not exist on a user-owned repository at all.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>A later push does not clear a verdict</h2>
+      <p>
+        With <code>dismiss_stale_reviews: true</code> and <code>count=0</code>, the implementer
+        pushed a second commit (<code>ee21028</code>) over a live blocking verdict. The review was
+        <strong>not</strong> dismissed:
+      </p>
+      <pre>protection  { "required_approving_review_count": 0, "dismiss_stale_reviews": true }
+push        PUT /contents/prototype-104.md -> 200  (ee21028adecd79c343fcad2856e97e5c3d04868f)
+
+reviews     5092573177  CHANGES_REQUESTED  reviewer-my-team[bot]   &lt;- survived the push
+            5090488756  APPROVED           judge-my-team[bot]
+
+reviewDecision    CHANGES_REQUESTED
+mergeStateStatus  BLOCKED</pre>
+      <div class="callout">
+        <strong>Read carefully</strong>
+        <code>dismiss_stale_reviews</code> stales <em>approvals</em>. It does not stale a
+        <code>CHANGES_REQUESTED</code>. A Remediator's commit therefore cannot self-heal a blocking
+        verdict — only an explicit dismissal, or a fresh approving review from the same Principal,
+        will clear it.
+      </div>
+    </section>
+
+    <section class="verdict">
+      <h2>Verdict</h2>
+      <ol>
+        <li>
+          <strong>Yes — Reviewer → Judge → Integrator can leave a platform blocker.</strong> A
+          Reviewer App holding <code>Contents: write</code> produces a <code>CHANGES_REQUESTED</code>
+          that blocks at every required-approval count tested, and survives later commits even with
+          stale dismissal enabled.
+        </li>
+        <li>
+          <strong>But the Judge can always clear it.</strong> Dismissal succeeded with nothing but
+          <code>Pull requests: write</code>. There is no configuration in which the block is
+          reachable and the remedy is not.
+        </li>
+        <li>
+          <strong>Whether the block exists at all is a permissions choice, not a protection
+          setting.</strong> Grant the Reviewer <code>Contents: read</code> and its verdict is
+          advisory — the platform ignores it entirely and the orchestrator must enforce it. Grant
+          <code>Contents: write</code> and the platform enforces it for you.
+        </li>
+        <li>
+          <strong><code>dismissal_restrictions</code> is unavailable</strong> on user-owned target
+          repositories, so it cannot appear in any design that must work outside an organization.
+        </li>
+        <li>
+          <strong>Review weight is live-evaluated</strong> against the reviewing Principal's current
+          permissions, making permission edits retroactive across all open pull requests.
+        </li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Cleanup — verified after the run</h2>
+      <pre>main SHA        91bdcb713bbb5e60b0db044ca8575a54e8b169fb   (unchanged from baseline)
+protection      404 Branch not protected
+rulesets        0
+open PRs        0
+branches        main                                        (disposable branch deleted)
+fixture PR #4   closed
+tokens          14 minted, 14 revoked (HTTP 204), 0 persisted</pre>
+    </section>
+  </div>
+
+  <script>
+    const ARMS = [
+      {
+        id: "A", label: "A · unprotected",
+        desc: "No branch protection at all. The Reviewer App holds contents: read. Does a REQUEST_CHANGES from a distinct App Principal gate anything on its own?",
+        evidence: `POST /repos/mcnewcp/my-team-fixtures/pulls/4/reviews  -> 200
+     { "event": "REQUEST_CHANGES" }
+     review 5090461406  CHANGES_REQUESTED  reviewer-my-team[bot]`,
+        state: { protection: "none", reviewer: "contents: read",
+                 reviewDecision: "null", mergeable: "true",
+                 mergeable_state: "unstable", status: "UNSTABLE" },
+        verdict: "not blocked"
+      },
+      {
+        id: "B", label: "B · count=0",
+        desc: "Required reviews switched on with zero required approvals, the changes-requested still live. This is the arm most likely to be assumed blocking — it is not.",
+        evidence: `PUT /branches/main/protection -> 200
+     { "required_approving_review_count": 0, "dismiss_stale_reviews": false }
+
+GET /pulls/4 -> 200   mergeable_state: "clean"`,
+        state: { protection: "count=0, stale=false", reviewer: "contents: read",
+                 reviewDecision: "null", mergeable: "true",
+                 mergeable_state: "clean", status: "CLEAN" },
+        verdict: "not blocked"
+      },
+      {
+        id: "C", label: "C · count=1",
+        desc: "One required approval, no approvals yet. Blocked — but for want of an approval, not because of the Reviewer's verdict.",
+        evidence: `PUT /branches/main/protection -> 200
+     { "required_approving_review_count": 1 }
+
+GET /pulls/4 -> 200   mergeable_state: "blocked"`,
+        state: { protection: "count=1", reviewer: "contents: read",
+                 reviewDecision: "null", mergeable: "true",
+                 mergeable_state: "blocked", status: "BLOCKED" },
+        verdict: "blocked — missing approval"
+      },
+      {
+        id: "C2", label: "C2 · App approval",
+        desc: "The Judge App approves while the Reviewer's changes-requested is still live and undismissed. The App approval satisfies count=1 and the PR goes clean straight over the verdict.",
+        evidence: `POST /pulls/4/reviews -> 200   { "event": "APPROVE" }
+     review 5090488756  APPROVED  judge-my-team[bot]
+
+reviews now:
+     5090461406  CHANGES_REQUESTED  reviewer-my-team[bot]   &lt;- still live
+     5090488756  APPROVED           judge-my-team[bot]
+
+GET /pulls/4 -> 200   mergeable_state: "clean"`,
+        state: { protection: "count=1", reviewer: "contents: read",
+                 reviewDecision: "APPROVED", mergeable: "true",
+                 mergeable_state: "clean", status: "CLEAN" },
+        verdict: "not blocked"
+      },
+      {
+        id: "D1", label: "D1 · reviewer gains write",
+        desc: "The only change is the Reviewer App's Contents grant, read to write. Same App, same verdict, same protection as arm B — and the result inverts.",
+        evidence: `granted reviewer: contents: write, pull_requests: write
+
+POST /pulls/4/reviews -> 200   { "event": "REQUEST_CHANGES" }
+     review 5092560999  CHANGES_REQUESTED  reviewer-my-team[bot]
+
+GET /pulls/4 -> 200   mergeable_state: "blocked"
+reviewDecision: "CHANGES_REQUESTED"`,
+        state: { protection: "count=0, stale=false", reviewer: "contents: write",
+                 reviewDecision: "CHANGES_REQUESTED", mergeable: "true",
+                 mergeable_state: "blocked", status: "BLOCKED" },
+        verdict: "blocked by the verdict"
+      },
+      {
+        id: "D2", label: "D2 · over an approval",
+        desc: "Raised to one required approval with the Judge's approval standing. The verdict outranks it — a changes-requested is not outvoted by an approval.",
+        evidence: `PUT /branches/main/protection -> 200   { "required_approving_review_count": 1 }
+
+     5092560999  CHANGES_REQUESTED  reviewer-my-team[bot]
+     5090488756  APPROVED           judge-my-team[bot]
+
+GET /pulls/4 -> 200   mergeable_state: "blocked"`,
+        state: { protection: "count=1", reviewer: "contents: write",
+                 reviewDecision: "CHANGES_REQUESTED", mergeable: "true",
+                 mergeable_state: "blocked", status: "BLOCKED" },
+        verdict: "blocked by the verdict"
+      },
+      {
+        id: "L", label: "L · least-permission dismissal",
+        desc: "The Judge, narrowed to exactly metadata:read + pull_requests:write, dismisses the blocking verdict. It succeeds. The PR stays blocked only because the same narrowing stopped the Judge's own standing approval from counting.",
+        evidence: `granted judge: metadata: read, pull_requests: write
+
+PUT /pulls/4/reviews/5092560999/dismissals -> 200
+     5092560999  DISMISSED
+
+reviewDecision: "REVIEW_REQUIRED"   &lt;- verdict cleared; approval no longer counts`,
+        state: { protection: "count=1", reviewer: "contents: write",
+                 reviewDecision: "REVIEW_REQUIRED", mergeable: "true",
+                 mergeable_state: "blocked", status: "BLOCKED" },
+        verdict: "verdict cleared, approval lost"
+      },
+      {
+        id: "S", label: "S · later push",
+        desc: "A fresh verdict, dismiss_stale_reviews enabled, and a second commit pushed on top. Stale dismissal does not touch a changes-requested.",
+        evidence: `PUT /branches/main/protection -> 200
+     { "required_approving_review_count": 0, "dismiss_stale_reviews": true }
+
+PUT /contents/prototype-104.md -> 200   ee21028adecd79c343fcad2856e97e5c3d04868f
+
+     5092573177  CHANGES_REQUESTED  reviewer-my-team[bot]   &lt;- survived
+reviewDecision: "CHANGES_REQUESTED"`,
+        state: { protection: "count=0, stale=true", reviewer: "contents: write",
+                 reviewDecision: "CHANGES_REQUESTED", mergeable: "true",
+                 mergeable_state: "blocked", status: "BLOCKED" },
+        verdict: "blocked — push did not clear it"
+      },
+      {
+        id: "R", label: "R · reversal test",
+        desc: "The Judge's Contents: write is restored. Review 5090488756 — untouched since 13:48:57Z — counts again, closing the A→B→A reversal.",
+        evidence: `granted judge: contents: write, metadata: read, pull_requests: write
+
+PUT /pulls/4/reviews/5092573177/dismissals -> 200
+PUT /branches/main/protection -> 200   { "required_approving_review_count": 1 }
+
+     5090488756  APPROVED  judge-my-team[bot]   &lt;- same review, never resubmitted
+
+reviewDecision: "APPROVED"   mergeable_state: "clean"`,
+        state: { protection: "count=1", reviewer: "contents: write",
+                 reviewDecision: "APPROVED", mergeable: "true",
+                 mergeable_state: "clean", status: "CLEAN" },
+        verdict: "not blocked"
+      }
+    ];
+
+    const stepper = document.getElementById("stepper");
+    const desc = document.getElementById("arm-desc");
+    const evidence = document.getElementById("arm-evidence");
+    const stateBox = document.getElementById("arm-state");
+
+    function render(i) {
+      const arm = ARMS[i];
+      [...stepper.children].forEach((b, n) =>
+        b.setAttribute("aria-pressed", String(n === i)));
+      desc.textContent = arm.desc;
+      evidence.innerHTML = arm.evidence;
+      stateBox.innerHTML = Object.entries(arm.state)
+        .map(([k, v]) => `<div class="state-row"><span>${k}</span><span>${v}</span></div>`)
+        .join("") +
+        `<div class="state-row"><span>verdict</span><span><span class="pill ${
+          arm.verdict.startsWith("not") ? "clean" : "blocked"
+        }">${arm.verdict}</span></span></div>`;
+    }
+
+    ARMS.forEach((arm, i) => {
+      const b = document.createElement("button");
+      b.textContent = arm.label;
+      b.setAttribute("aria-pressed", "false");
+      b.addEventListener("click", () => render(i));
+      stepper.appendChild(b);
+    });
+
+    render(0);
+  </script>
+</body>
+</html>
