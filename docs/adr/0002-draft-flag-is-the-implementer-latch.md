@@ -1,5 +1,11 @@
 # The draft flag is the implementer's latch
 
+> **Supersession note:** [ADR-0012](./0012-ledger-is-a-hash-chained-record-of-judgment.md)
+> supersedes this record's reference to a Judge verdict as the live instruction and its use of
+> **Round** for every draft-latched Implementer cycle. A **Review round** is now a Reviewer sample,
+> and the **Ledger** carries the Judge's **Dispositions**. The draft latch and the empirical
+> findings about native reviews, numeric Principals, pinned SHAs and settling time remain in force.
+
 A pull request is a draft exactly when the implementer holds it. The orchestrator converts it
 to draft whenever it dispatches implementation work — first pass, CI repair, or judge-requested
 revision — and only the implementer converts it back to ready, which is its declaration that the

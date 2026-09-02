@@ -56,12 +56,13 @@ inside an Action's in-memory [continuity chain](./0011-one-action-owns-its-conti
 returns the identities as telemetry. A crash mid-Action orphans the chain and the next tick starts
 fresh: slower, never wrong.
 
-**Counters are derived or they do not exist.** Judge rounds come from the reviews list,
-CI-repair rounds from distinct failing head SHAs, implementation rounds from `convert_to_draft`
-events, and a stall from elapsed time on GitHub's own clock. "N ticks with no new commit" is not
-representable at all, because a tick leaves no trace unless it mutates something. That turns out
-to be the better primitive anyway: elapsed time catches a *hung* agent, which tick-counting
-cannot, since a hung tick never returns to be counted.
+**Counters are derived or they do not exist.** Review rounds come from the validated
+[Ledger](./0012-ledger-is-a-hash-chained-record-of-judgment.md) chain bound to native reviews,
+distinct CI repairs from failing head SHAs, Implementer cycles from `convert_to_draft` events, and
+a stall from elapsed time on GitHub's own clock. "N ticks with no new commit" is not representable
+at all, because a tick leaves no trace unless it mutates something. That turns out to be the
+better primitive anyway: elapsed time catches a *hung* agent, which tick-counting cannot, since a
+hung tick never returns to be counted.
 
 **Handoff documents are not state.** They live outside git in the workspace and are never an
 input to a decision. Tick N+1 derives "continue implementing" from the remote branch and the

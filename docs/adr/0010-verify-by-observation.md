@@ -1,5 +1,12 @@
 # Verify by observation, and the trust boundary is exactly two declarations
 
+> **Supersession note:** [ADR-0011](./0011-contracts-are-append-only-comments.md) and
+> [ADR-0012](./0012-ledger-is-a-hash-chained-record-of-judgment.md) supersede the exact enumeration
+> below. The native-review Declaration now belongs to the Reviewer, while the Contractor's
+> **Contract** and the Judge's **Ledger** use closed machine envelopes. The governing boundary
+> survives: facts available from GitHub are verified directly, and narrative prose is never
+> parsed as machine input.
+
 No state transition is taken on an agent's account of its own work when the fact is checkable
 directly. Did the branch reach origin? Are the required checks green at this head? Does a pull
 request exist and does it link its issue? Each is a question GitHub answers, and the orchestrator
