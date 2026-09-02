@@ -430,8 +430,9 @@
         <h2>The question</h2>
         <p>
           Can one mutable PR conversation comment make subjective review bounded, persistent,
-          readable, and mechanically recoverable — including exact retries, stale reviews,
-          forbidden re-raises, interrupted Judge writes, and two concurrent Judges?
+          readable, and mechanically recoverable — including resolution-only approvals, exact
+          retries, stale reviews, forbidden re-raises, interrupted Judge writes, and two
+          concurrent Judges?
         </p>
         <p>
           The specimen uses <strong>acme/payments#418</strong>: round one finds three realistic
@@ -442,6 +443,7 @@
       <ul class="proposal">
         <li><strong>Identity has two faces.</strong> RFC-8785 + SHA-256 over a stable identity object is authoritative; <code>F-001</code> is only its never-reused display label.</li>
         <li><strong>Old blockers cannot disappear silently.</strong> A later review must resolve or continue each one exactly once; terminal findings cannot be raised again.</li>
+        <li><strong>Every accepted sample becomes durable.</strong> An approval that only resolves old blockers gets a whole-Ledger snapshot before integration without inventing a new Disposition.</li>
         <li><strong>A Judge update is all-or-nothing.</strong> Follow-up issues exist first, then one whole-Ledger write; exact retries converge.</li>
         <li><strong>Last-write-wins is detected, not trusted.</strong> Revision hashes, GitHub edit history, and dismissal pointers turn divergent writers or deletion into escalation.</li>
       </ul>
@@ -485,6 +487,8 @@
             <button class="action-button" data-action="SUBMIT_ROUND_1">Reviewer: round 1</button>
             <button class="action-button" data-action="JUDGE_ROUND_1">Judge: dispose round 1</button>
             <button class="action-button" data-action="REMEDIATE">Remediate + green Audit</button>
+            <button class="action-button" data-action="SUBMIT_RESOLUTION_ONLY_ROUND_2">Reviewer: approve remediation</button>
+            <button class="action-button" data-action="RECORD_ROUND_2_APPROVAL">Ledger: record approval</button>
             <button class="action-button" data-action="SUBMIT_ROUND_2">Reviewer: round 2</button>
             <button class="action-button" data-action="JUDGE_ROUND_2_DEFER">Judge: defer new point</button>
             <button class="action-button" data-action="JUDGE_ROUND_2_BLOCK">Judge: block at cap</button>
@@ -521,7 +525,7 @@
       <div class="section-heading">
         <div>
           <h2 id="artifacts-title">The interface between Roles</h2>
-          <p>The native review is immutable input by identity; the Ledger comment is the mutable, validated projection of Judge decisions.</p>
+          <p>The native review is immutable input by identity; the Ledger comment is the mutable, validated projection of accepted samples and Judge decisions.</p>
         </div>
       </div>
       <div class="artifact-grid">
@@ -574,6 +578,7 @@
             <tr><td>Delta-only</td><td>Round one covers the full base-to-head diff. Later rounds use the preceding accepted round head as <code>delta_base_sha</code>; every new or continuing point must touch that delta.</td><td>A stale review is ignored as a round; an unchanged-code finding is a protocol violation.</td></tr>
             <tr><td>Disposition</td><td>Every new point receives exactly one immutable outcome: <code>blocking_now</code>, <code>follow_up</code>, or <code>dropped</code>. Follow-up URLs exist before the Ledger write.</td><td>A partial set is never written. A later outcome change is a fork, not an edit to history.</td></tr>
             <tr><td>Prior blockers</td><td>The next accepted review names every blocker exactly once as <code>resolved</code> or <code>continuation</code>. A continuation keeps its original disposition and identity.</td><td>Missing, duplicated, or terminal references make the review invalid.</td></tr>
+            <tr><td>Resolution-only approval</td><td>An accepted <code>APPROVED</code> review with no new Findings still becomes one whole Ledger snapshot, recording its blocker resolutions without creating a Disposition.</td><td>Integration waits until the review key appears in the Ledger.</td></tr>
             <tr><td>Judge retry</td><td>One full snapshot carries a contiguous revision, previous digest, and content-derived mutation ID. Identical retry is a setter.</td><td>Divergent siblings in GitHub edit history are detectable and escalate.</td></tr>
             <tr><td>Discovery</td><td>Scan PR comments for exact sentinels, Ledger ID, and expected Judge Principal. Lowest comment ID wins only when every duplicate has the identical genesis. Each dismissed review points to the chosen URL/revision/digest.</td><td>A divergent genesis, missing anchored comment, foreign edit, broken render, or broken hash chain escalates.</td></tr>
           </tbody>
@@ -1044,6 +1049,7 @@
         return digestObject({
           kind,
           review_key: review.payload.review_key,
+          review_body_digest: review.body_digest,
           dispositions: [...dispositions.entries()].map(([findingId, value]) => ({ finding_id: findingId, ...value })),
         });
       }
@@ -1066,7 +1072,11 @@
 
         ledger.revision += 1;
         ledger.previous_digest = previousDigest;
-        ledger.mutation_id = await makeMutationId("judge_disposition", review, dispositions);
+        ledger.mutation_id = await makeMutationId(
+          dispositions.size ? "judge_disposition" : "review_accounting",
+          review,
+          dispositions,
+        );
 
         const byId = new Map(ledger.findings.map((item) => [item.finding_id, item]));
         for (const resolution of review.payload.resolved_findings) {
@@ -1210,14 +1220,18 @@
         if (!review) return reject(next, "There is no valid current-head review to judge.");
         if (ledgeredReviewKeys(next).has(review.payload.review_key)) {
           if (next.interrupted_write) {
-            addDismissalAnchor(next, review);
+            if (review.native_state === "CHANGES_REQUESTED") addDismissalAnchor(next, review);
             next.interrupted_write = null;
-            next.last_event = { tone: "good", text: "Recovery found the exact mutation already present, wrote nothing again, and completed the missing review-dismissal pointer." };
+            next.last_event = {
+              tone: "good",
+              text: review.native_state === "CHANGES_REQUESTED"
+                ? "Recovery found the exact mutation already present, wrote nothing again, and completed the missing review-dismissal pointer."
+                : "Recovery found the exact approved-round snapshot already present and wrote nothing again.",
+            };
             return next;
           }
           return reject(next, "That review already has a complete Ledger transaction.");
         }
-        if (review.native_state !== "CHANGES_REQUESTED") return reject(next, "An APPROVED review has no new findings for the Judge to dispose.");
         if (dispositions.size !== review.payload.findings.filter((item) => item.kind === "new").length) {
           return reject(next, "The Judge must decide every new finding in one complete write.");
         }
@@ -1231,12 +1245,14 @@
           next.interrupted_write = { mutation_id: snapshot.ledger.mutation_id, review_key: review.payload.review_key };
           next.last_event = {
             tone: "warn",
-            text: "GitHub accepted the full Ledger write, but the client timed out before seeing the response. The native review is not dismissed yet.",
+            text: review.native_state === "CHANGES_REQUESTED"
+              ? "GitHub accepted the full Ledger write, but the client timed out before seeing the response. The native review is not dismissed yet."
+              : "GitHub accepted the full approved-round snapshot, but the client timed out before seeing the response.",
           };
           return next;
         }
 
-        addDismissalAnchor(next, review);
+        if (review.native_state === "CHANGES_REQUESTED") addDismissalAnchor(next, review);
         const blockers = openBlockers(next);
         if (blockers.length && next.ledger.rounds.length >= next.policy.review_round_limit) {
           next.escalation = `Review-round cap ${next.policy.review_round_limit} is exhausted with ${blockers.length} blocking finding(s).`;
@@ -1246,7 +1262,9 @@
             tone: "good",
             text: blockers.length
               ? "All three findings received one disposition. The Reviewer verdict is dismissed with a Ledger pointer; the one blocker moves to remediation."
-              : "Round two resolved the old blocker and filed the new delta point. With no blocker left, the mechanical Integrator may proceed.",
+              : review.native_state === "APPROVED"
+                ? "The approval and its blocker resolution are now durable in the Ledger. With no blocker left, the mechanical Integrator may proceed."
+                : "Round two resolved the old blocker and filed the new delta point. With no blocker left, the mechanical Integrator may proceed.",
           };
         }
         return next;
@@ -1313,7 +1331,7 @@
         const review = latestCurrentReview(state);
         const ledgered = ledgeredReviewKeys(state);
         if (review && !ledgered.has(review.payload.review_key)) {
-          return review.native_state === "CHANGES_REQUESTED" ? "JUDGING" : "INTEGRATING";
+          return "JUDGING";
         }
         const blockers = openBlockers(state);
         if (blockers.length) {
@@ -1373,6 +1391,20 @@
             });
             return submitReview(next, review);
           }
+          case "SUBMIT_RESOLUTION_ONLY_ROUND_2": {
+            if (!next.ledger || next.pr.head_sha !== SHA.round2) return reject(next, "Round two requires the adjudicated first round and its remediated head.");
+            const review = await makeReview(next, {
+              id: next.next_review_id++,
+              headSha: SHA.round2,
+              deltaBaseSha: lastAcceptedHead(next),
+              findings: [],
+              resolvedFindings: [next.fixtures.resolutionF1],
+              submittedAt: "2026-09-02T18:40:00Z",
+            });
+            return submitReview(next, review);
+          }
+          case "RECORD_ROUND_2_APPROVAL":
+            return judgeLatest(next, new Map());
           case "JUDGE_ROUND_2_DEFER":
             return judgeLatest(next, roundTwoDispositions(next, false));
           case "JUDGE_ROUND_2_BLOCK":
@@ -1526,6 +1558,18 @@
     // -------------------------------------------------------------------------
     const Demo = (() => {
       const scenarios = [
+        {
+          id: "approval",
+          title: "Resolution-only approval",
+          description: "Exercise the ordinary convergence path the first prototype missed: round two resolves the old blocker and finds nothing new. Integration waits while the accepted approval becomes a Ledger snapshot, but no subjective Disposition is invented.",
+          steps: [
+            ["Submit round 1 review", "SUBMIT_ROUND_1"],
+            ["Dispose all three findings", "JUDGE_ROUND_1"],
+            ["Remediate + Audit", "REMEDIATE"],
+            ["Approve and resolve blocker", "SUBMIT_RESOLUTION_ONLY_ROUND_2"],
+            ["Record approval; integrate", "RECORD_ROUND_2_APPROVAL"],
+          ],
+        },
         {
           id: "converge",
           title: "Two-round convergence",
