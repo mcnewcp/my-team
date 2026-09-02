@@ -33,6 +33,11 @@ An AI coding tool that `my-team` drives to do the actual engineering — Claude 
 `my-team` wires Harnesses together; it does not replace them.
 _Avoid_: backend, provider, engine, model
 
+**Harness selection**:
+The Harness and model selector assigned to one generative Role for an Action. It remains fixed
+throughout the Action's continuity chain; Remediator uses Implementer's.
+_Avoid_: runtime, provider/model pair, execution slot
+
 **Skill payload**:
 The skills `my-team` installs into a **target repo** — the procedures its **roles** run, and the only part of the tool a human can invoke by hand and get the same behaviour from. Membership is a closure: a skill belongs because the loop dispatches it or another payload skill names it, never because it is merely useful.
 _Avoid_: bundle, kit, templates, prompts
@@ -60,8 +65,9 @@ _Avoid_: allowlist, trusted user, maintainer
 
 **Action**:
 One unit of work a tick dispatches: one **role**, one definition of done. A Harness-backed Action
-owns its whole continuity chain — each stopped session writes a **handoff** for a fresh successor —
-and ends only when the Role finishes or fails; several Actions may belong to the same Role.
+keeps one **Harness selection** through its whole continuity chain — each stopped session writes a
+**handoff** for a fresh successor — and ends only when the Role finishes or fails; several Actions
+may belong to the same Role.
 _Avoid_: job, step, task
 
 **Round**:

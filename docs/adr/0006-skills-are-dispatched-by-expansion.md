@@ -30,10 +30,9 @@ expansion path is immune to the flag in both directions, and arguments survive i
 
 **Prepending the invocation form above the seam**, leaving the seam's parameter list at
 nine. Rejected because the prompt assembler would then be emitting Claude Code syntax — the
-precise leak the seam exists to prevent, and the same argument that made
-`--setting-sources project` an adapter constant rather than a seam parameter. A "skill" is
-harness-neutral: `.agents/skills` is literally Codex's own repo skill root, and both
-harnesses have a first-class invocation form for one.
+precise leak the seam exists to prevent. A "skill" is harness-neutral: `.agents/skills` is
+literally Codex's own repo skill root, and both harnesses have a first-class invocation form
+for one.
 
 **Inlining the skill body into the prompt**, which the prototype floated as a fallback. It
 works for prose-only skills and fails the moment a skill has bundled assets or invokes
