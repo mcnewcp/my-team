@@ -1,0 +1,1425 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PROTOTYPE — Pull-request comment pinning</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #5f6b7d;
+      --line: #d8deea;
+      --paper: #ffffff;
+      --soft: #f5f7fb;
+      --accent: #3159c6;
+      --accent-soft: #eef2ff;
+      --good: #18794e;
+      --good-soft: #eaf8f0;
+      --warn: #946200;
+      --warn-soft: #fff8df;
+      --bad: #b42318;
+      --bad-soft: #fff0ee;
+      --code: #101828;
+      --shadow: 0 12px 32px rgba(23, 32, 51, 0.08);
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(49, 89, 198, 0.09), transparent 30rem),
+        #f8f9fc;
+      font-family:
+        Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button {
+      font: inherit;
+      cursor: pointer;
+    }
+
+    code,
+    pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 42px 0 72px;
+    }
+
+    .hero {
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      margin-bottom: 12px;
+      padding: 5px 10px;
+      border: 1px solid #f1b8b3;
+      border-radius: 999px;
+      color: var(--bad);
+      background: var(--bad-soft);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 980px;
+      margin-bottom: 12px;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.04;
+      letter-spacing: -0.04em;
+    }
+
+    .hero > p {
+      max-width: 930px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .question,
+    .section,
+    .verdict {
+      margin-top: 22px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .question {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+      gap: 26px;
+    }
+
+    .question h2,
+    .section-heading h2,
+    .verdict h2 {
+      margin-bottom: 6px;
+      font-size: 22px;
+    }
+
+    .question p,
+    .section-heading p,
+    .muted {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .facts {
+      display: grid;
+      gap: 9px;
+      margin: 0;
+    }
+
+    .fact {
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--soft);
+    }
+
+    .fact dt {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .fact dd {
+      margin: 4px 0 0;
+      overflow-wrap: anywhere;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .verdict {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+      border-color: #f1b8b3;
+      background: linear-gradient(135deg, var(--bad-soft), #fff 62%);
+    }
+
+    .verdict-mark {
+      display: grid;
+      width: 58px;
+      height: 58px;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--bad);
+      font-size: 28px;
+      font-weight: 900;
+    }
+
+    .verdict p {
+      max-width: 920px;
+      margin-bottom: 0;
+      color: #71332d;
+    }
+
+    .section-heading {
+      display: flex;
+      gap: 18px;
+      align-items: start;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .quiet-button {
+      flex: none;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: var(--paper);
+      font-weight: 700;
+    }
+
+    .quiet-button:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .state-cell {
+      min-height: 100px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .state-cell span {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .state-cell strong {
+      display: block;
+      overflow-wrap: anywhere;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .pill.good {
+      color: var(--good);
+      background: var(--good-soft);
+    }
+
+    .pill.bad {
+      color: var(--bad);
+      background: var(--bad-soft);
+    }
+
+    .pill.warn {
+      color: var(--warn);
+      background: var(--warn-soft);
+    }
+
+    .event {
+      margin-top: 12px;
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--muted);
+      background: var(--soft);
+      font-size: 14px;
+    }
+
+    .event.good {
+      border-color: #a8dfc1;
+      color: var(--good);
+      background: var(--good-soft);
+    }
+
+    .event.bad {
+      border-color: #f1b8b3;
+      color: var(--bad);
+      background: var(--bad-soft);
+    }
+
+    .event.warn {
+      border-color: #ead28a;
+      color: var(--warn);
+      background: var(--warn-soft);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      padding: 10px 11px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      background: var(--soft);
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    details.evidence {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #fbfcfe;
+    }
+
+    details.evidence summary {
+      padding: 10px 12px;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    details.evidence pre {
+      max-height: 480px;
+      margin: 0;
+      padding: 14px;
+      overflow: auto;
+      border-top: 1px solid var(--line);
+      color: #dce6ff;
+      background: var(--code);
+      font-size: 11px;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    .action-groups {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .action-group {
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .action-group h3 {
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    .button-stack,
+    .steps {
+      display: grid;
+      gap: 8px;
+    }
+
+    .action-button,
+    .step-button {
+      width: 100%;
+      padding: 9px 11px;
+      border: 1px solid #bac4d7;
+      border-radius: 8px;
+      color: var(--ink);
+      background: var(--paper);
+      text-align: left;
+      font-weight: 680;
+    }
+
+    .action-button:hover,
+    .step-button:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .action-button.danger {
+      border-color: #e8aaa5;
+      color: var(--bad);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 3px;
+    }
+
+    .tab {
+      flex: none;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--paper);
+      font-weight: 700;
+    }
+
+    .tab.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .walkthrough-panel {
+      margin-top: 15px;
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .walkthrough-panel p {
+      color: var(--muted);
+    }
+
+    .step-button {
+      position: relative;
+      padding-left: 44px;
+      counter-increment: step;
+    }
+
+    .steps {
+      counter-reset: step;
+    }
+
+    .step-button::before {
+      position: absolute;
+      left: 12px;
+      width: 21px;
+      height: 21px;
+      border-radius: 50%;
+      color: white;
+      background: #98a2b3;
+      content: counter(step);
+      font-size: 12px;
+      line-height: 21px;
+      text-align: center;
+    }
+
+    .step-button.current {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .step-button.current::before {
+      background: var(--accent);
+    }
+
+    .step-button.done {
+      color: var(--good);
+      background: var(--good-soft);
+    }
+
+    .step-button.done::before {
+      background: var(--good);
+      content: "✓";
+    }
+
+    .step-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .findings,
+    .observation-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .finding,
+    .observation {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .finding h3,
+    .observation h3 {
+      margin-bottom: 6px;
+      font-size: 16px;
+    }
+
+    .finding p,
+    .observation p {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .source-list {
+      margin: 12px 0 0;
+      padding-left: 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .source-list li + li {
+      margin-top: 6px;
+    }
+
+    .caveat {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-left: 3px solid var(--warn);
+      color: #6e5412;
+      background: var(--warn-soft);
+      font-size: 14px;
+    }
+
+    @media (max-width: 900px) {
+      .question,
+      .action-groups,
+      .findings,
+      .observation-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .state-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 560px) {
+      .shell {
+        width: min(100% - 20px, 1180px);
+        padding-top: 24px;
+      }
+
+      .question,
+      .section,
+      .verdict {
+        padding: 17px;
+      }
+
+      .verdict,
+      .state-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section-heading {
+        display: block;
+      }
+
+      .section-heading .quiet-button {
+        margin-top: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <span class="eyebrow">Throwaway logic prototype · captured 2026-09-02</span>
+      <h1>Can GitHub pin a general comment on a pull request?</h1>
+      <p>
+        Replay the sanitized live evidence from
+        <a href="https://github.com/mcnewcp/my-team-fixtures/pull/3">fixture pull request #3</a>.
+        This is platform evidence for the Ledger discussion, not a Ledger design.
+      </p>
+    </header>
+
+    <section class="question">
+      <div>
+        <h2>The question</h2>
+        <p>
+          Can the issue-comment pin REST endpoint pin a general conversation comment whose
+          subject is a pull request? Test installation tokens carrying Pull requests write
+          alone, Issues write alone, and both together; inspect retry, projection, UI, and
+          cleanup behavior on a real fixture.
+        </p>
+        <p style="margin-top: 12px;">
+          The controls below only replay observations actually captured from GitHub. An
+          out-of-order action is rejected instead of inventing behavior that was not tested.
+        </p>
+      </div>
+      <dl class="facts">
+        <div class="fact">
+          <dt>REST API version</dt>
+          <dd>2026-03-10</dd>
+        </div>
+        <div class="fact">
+          <dt>Fixture</dt>
+          <dd>Public selected-repository App installation · PR #3 · issue comment 5503236896</dd>
+        </div>
+        <div class="fact">
+          <dt>Initial projection</dt>
+          <dd>Single GET: <code>pin: null</code> · list GET: <code>pin</code> key absent</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="verdict" aria-labelledby="verdict-title">
+      <div class="verdict-mark" aria-hidden="true">×</div>
+      <div>
+        <h2 id="verdict-title">No supported permission combination succeeded</h2>
+        <p>
+          Pull requests write alone and Issues write alone each returned HTTP 403. With both
+          grants together, the endpoint instead returned HTTP 422 on every pin attempt with
+          GitHub's exact validation error:
+          <code>PinnedIssueComment.issue — issue cannot be a pull request</code>. No pin
+          object, actor, timestamp, marker, or pinned UI state ever existed.
+        </p>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="arms-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="arms-title">Permission arms</h2>
+          <p>Each one-hour token was repository-restricted; unavoidable Metadata read is shown.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Token profile</th>
+              <th>Mint</th>
+              <th>PUT pin</th>
+              <th>Exact outcome</th>
+              <th>Pin after call</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Pull requests write + Metadata read</td>
+              <td>201</td>
+              <td><span class="pill bad">403</span></td>
+              <td>Resource not accessible by integration</td>
+              <td><code>null</code></td>
+            </tr>
+            <tr>
+              <td>Issues write + Metadata read</td>
+              <td>201</td>
+              <td><span class="pill bad">403</span></td>
+              <td>Resource not accessible by integration</td>
+              <td><code>null</code></td>
+            </tr>
+            <tr>
+              <td>Issues write + Pull requests write + Metadata read</td>
+              <td>201</td>
+              <td><span class="pill bad">422</span></td>
+              <td><code>issue cannot be a pull request</code></td>
+              <td><code>null</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="caveat">
+        There is no “minimum successful combination” to report: the superset of every
+        relevant registered grant reached validation and GitHub rejected the PR subject.
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="state-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="state-title">Current captured state</h2>
+          <p>The complete relevant state after the selected recorded transition.</p>
+        </div>
+        <button class="quiet-button" id="reset-button" type="button">Reset full trace</button>
+      </div>
+      <div class="state-grid" id="state-grid"></div>
+      <div class="event" id="event"></div>
+      <details class="evidence" open>
+        <summary>Sanitized API/UI capture for this transition</summary>
+        <pre id="evidence-json"></pre>
+      </details>
+    </section>
+
+    <section class="section" aria-labelledby="actions-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="actions-title">Free play</h2>
+          <p>Press the observations in captured order. Rejected orderings do not change state.</p>
+        </div>
+      </div>
+      <div class="action-groups">
+        <div class="action-group">
+          <h3>Permission boundary</h3>
+          <div class="button-stack">
+            <button class="action-button danger" data-action="PR_ONLY" type="button">Pull requests-only pin</button>
+            <button class="action-button danger" data-action="ISSUES_ONLY" type="button">Issues-only pin</button>
+            <button class="action-button danger" data-action="COMBINED" type="button">Combined-profile pin</button>
+          </div>
+        </div>
+        <div class="action-group">
+          <h3>Retry asymmetry</h3>
+          <div class="button-stack">
+            <button class="action-button danger" data-action="PIN_RETRY" type="button">Repeat combined pin</button>
+            <button class="action-button danger" data-action="PIN_RETRY_2" type="button">Repeat combined pin again</button>
+            <button class="action-button" data-action="UNPIN" type="button">Unpin never-pinned comment</button>
+            <button class="action-button" data-action="UNPIN_RETRY" type="button">Repeat unpin</button>
+          </div>
+        </div>
+        <div class="action-group">
+          <h3>Visibility and cleanup</h3>
+          <div class="button-stack">
+            <button class="action-button" data-action="PROJECTIONS" type="button">Read single/list projections</button>
+            <button class="action-button" data-action="UI" type="button">Apply human UI observation</button>
+            <button class="action-button" data-action="CLEANUP" type="button">Restore fixture baseline</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="walkthrough-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="walkthrough-title">Guided walkthroughs</h2>
+          <p>Each tab resets to a known captured point. Press the highlighted steps in order.</p>
+        </div>
+      </div>
+      <div class="tabs" id="walkthrough-tabs" role="tablist"></div>
+      <div class="walkthrough-panel" id="walkthrough-panel"></div>
+    </section>
+
+    <section class="section" aria-labelledby="ui-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="ui-title">Human UI observation</h2>
+          <p>Observed in the open fixture PR's Conversation tab and supplied as two screenshots.</p>
+        </div>
+      </div>
+      <div class="observation-grid">
+        <article class="observation">
+          <h3>Comment and conversation</h3>
+          <p>
+            No pinned marker appeared on the fixture comment, and no pinned-comment area
+            appeared at the top of the Conversation.
+          </p>
+        </article>
+        <article class="observation">
+          <h3>Three-dot menu</h3>
+          <p>
+            The visible menu offered Copy link, Copy Markdown, Quote reply, Reference in new
+            issue, Edit, Hide, Delete, and Report content. It offered neither Pin comment nor
+            Unpin comment.
+          </p>
+        </article>
+      </div>
+      <div class="caveat">
+        This is an unpinned-control observation, not a rendering test of a successful pin:
+        GitHub rejected every attempt before it could create a pinned state.
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="answer-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="answer-title">What this one fixture established</h2>
+          <p>Empirical platform facts only; the Ledger's supported location remains a later decision.</p>
+        </div>
+      </div>
+      <div class="findings">
+        <article class="finding">
+          <h3>A PR conversation comment cannot be pinned by this endpoint</h3>
+          <p>
+            The combined App token carried every tested relevant repository permission, yet
+            GitHub returned the subject-specific validation error on the initial call and two
+            retries. All three bodies were identical.
+          </p>
+        </article>
+        <article class="finding">
+          <h3>Isolated grants fail earlier</h3>
+          <p>
+            Pull requests write alone and Issues write alone each returned 403. The combined
+            token changed the failure from authorization to validation, but could not make the
+            operation supported.
+          </p>
+        </article>
+        <article class="finding">
+          <h3>Unpin is a silent idempotent no-op here</h3>
+          <p>
+            Two DELETE calls over the never-pinned PR comment both returned 204 with empty
+            bodies. A 204 unpin response therefore does not prove that a pin previously existed.
+          </p>
+        </article>
+        <article class="finding">
+          <h3>Unpinned projections differ</h3>
+          <p>
+            Single-comment GET returned an explicit <code>pin: null</code>. List-comments GET
+            omitted the <code>pin</code> member entirely. Neither <code>pinned_at</code> nor
+            <code>pinned_by</code> could be observed because GitHub never created a pin.
+          </p>
+        </article>
+        <article class="finding">
+          <h3>The UI matched the negative API state</h3>
+          <p>
+            Human inspection found no marker, pinned area, or Pin/Unpin menu action on the
+            real open pull-request Conversation.
+          </p>
+        </article>
+        <article class="finding">
+          <h3>Cleanup restored the baseline</h3>
+          <p>
+            Every token was revoked, PR #3 is closed, the disposable branch is deleted, the
+            comment is unpinned, and <code>main</code> remains at
+            <code>91bdcb713bbb5e60b0db044ca8575a54e8b169fb</code> with no protection,
+            rulesets, or open pull requests.
+          </p>
+        </article>
+      </div>
+      <p class="muted" style="margin-top: 16px;">
+        Operational note: a preflight run created fixture PR #2 and stopped before its first
+        pin call on a local Bash compatibility error. Its guarded exit closed the PR and
+        deleted its branch before the clean PR #3 experiment began.
+      </p>
+      <ul class="source-list">
+        <li><a href="https://docs.github.com/en/rest/issues/comments?apiVersion=2026-03-10#pin-an-issue-comment">Pin an issue comment</a></li>
+        <li><a href="https://docs.github.com/en/rest/issues/comments?apiVersion=2026-03-10#unpin-an-issue-comment">Unpin an issue comment</a></li>
+        <li><a href="https://docs.github.com/en/rest/apps/apps?apiVersion=2026-03-10#create-an-installation-access-token-for-an-app">Create an installation access token for an App</a></li>
+      </ul>
+    </section>
+  </main>
+
+  <script>
+    const EvidenceModel = (function () {
+      "use strict";
+
+      const error403 = Object.freeze({
+        message: "Resource not accessible by integration",
+        documentation_url: "https://docs.github.com/rest/issues/comments#pin-an-issue-comment",
+        status: "403"
+      });
+
+      const error422 = Object.freeze({
+        message: "Validation Failed",
+        errors: [{
+          resource: "PinnedIssueComment",
+          code: "custom",
+          field: "issue",
+          message: "issue cannot be a pull request"
+        }],
+        documentation_url: "https://docs.github.com/rest/issues/comments#pin-an-issue-comment",
+        status: "422"
+      });
+
+      const captures = Object.freeze({
+        initial: {
+          observed_at: "2026-09-02T02:04:06Z–02:04:07Z",
+          single: {
+            request: {
+              method: "GET",
+              endpoint: "/repos/mcnewcp/my-team-fixtures/issues/comments/5503236896",
+              api_version: "2026-03-10",
+              authentication: "none (public repository)"
+            },
+            response: {
+              status: 200,
+              body: {
+                html_url: "https://github.com/mcnewcp/my-team-fixtures/pull/3#issuecomment-5503236896",
+                issue_url: "https://api.github.com/repos/mcnewcp/my-team-fixtures/issues/3",
+                id: 5503236896,
+                user: {login: "[fixture-comment-author]", type: "User"},
+                body: "Ledger pin prototype fixture: this is a general pull-request conversation comment, not a review comment. It will be left unpinned after the experiment.",
+                pin: null
+              }
+            }
+          },
+          list: {
+            request: {
+              method: "GET",
+              endpoint: "/repos/mcnewcp/my-team-fixtures/issues/3/comments?per_page=100",
+              api_version: "2026-03-10",
+              authentication: "none (public repository)"
+            },
+            response: {
+              status: 200,
+              body: [{
+                id: 5503236896,
+                html_url: "https://github.com/mcnewcp/my-team-fixtures/pull/3#issuecomment-5503236896",
+                user: {login: "[fixture-comment-author]", type: "User"},
+                minimized: null,
+                note: "The raw list item has no pin member; that structural absence is preserved here."
+              }]
+            }
+          }
+        },
+        prOnly: {
+          observed_at: "2026-09-02T02:04:07Z–02:04:08Z",
+          token_mint: {
+            request: {
+              method: "POST",
+              endpoint: "/app/installations/[installation-id]/access_tokens",
+              body: {repositories: ["my-team-fixtures"], permissions: {pull_requests: "write"}}
+            },
+            response: {
+              status: 201,
+              body: {
+                expires_at: "2026-09-02T03:04:07Z",
+                permissions: {metadata: "read", pull_requests: "write"},
+                repository_selection: "selected",
+                repositories: [{name: "my-team-fixtures", full_name: "mcnewcp/my-team-fixtures", private: false}],
+                token: "[never persisted; omitted before capture]"
+              }
+            }
+          },
+          pin: {
+            request: {
+              method: "PUT",
+              endpoint: "/repos/mcnewcp/my-team-fixtures/issues/comments/5503236896/pin",
+              api_version: "2026-03-10",
+              token_profile: {pull_requests: "write", metadata: "read"}
+            },
+            response: {status: 403, body: error403}
+          },
+          get_after: {status: 200, pin: null},
+          token_revoke: {method: "DELETE", endpoint: "/installation/token", status: 204, body: null}
+        },
+        issuesOnly: {
+          observed_at: "2026-09-02T02:04:08Z–02:04:09Z",
+          token_mint: {
+            request: {
+              method: "POST",
+              endpoint: "/app/installations/[installation-id]/access_tokens",
+              body: {repositories: ["my-team-fixtures"], permissions: {issues: "write"}}
+            },
+            response: {
+              status: 201,
+              body: {
+                expires_at: "2026-09-02T03:04:08Z",
+                permissions: {issues: "write", metadata: "read"},
+                repository_selection: "selected",
+                repositories: [{name: "my-team-fixtures", full_name: "mcnewcp/my-team-fixtures", private: false}],
+                token: "[never persisted; omitted before capture]"
+              }
+            }
+          },
+          pin: {
+            request: {
+              method: "PUT",
+              endpoint: "/repos/mcnewcp/my-team-fixtures/issues/comments/5503236896/pin",
+              api_version: "2026-03-10",
+              token_profile: {issues: "write", metadata: "read"}
+            },
+            response: {status: 403, body: error403}
+          },
+          get_after: {status: 200, pin: null},
+          token_revoke: {method: "DELETE", endpoint: "/installation/token", status: 204, body: null}
+        },
+        combined: {
+          observed_at: "2026-09-02T02:04:09Z–02:04:10Z",
+          token_mint: {
+            request: {
+              method: "POST",
+              endpoint: "/app/installations/[installation-id]/access_tokens",
+              body: {
+                repositories: ["my-team-fixtures"],
+                permissions: {issues: "write", pull_requests: "write"}
+              }
+            },
+            response: {
+              status: 201,
+              body: {
+                expires_at: "2026-09-02T03:04:09Z",
+                permissions: {issues: "write", metadata: "read", pull_requests: "write"},
+                repository_selection: "selected",
+                repositories: [{name: "my-team-fixtures", full_name: "mcnewcp/my-team-fixtures", private: false}],
+                token: "[never persisted; omitted before capture]"
+              }
+            }
+          },
+          pin: {
+            request: {
+              method: "PUT",
+              endpoint: "/repos/mcnewcp/my-team-fixtures/issues/comments/5503236896/pin",
+              api_version: "2026-03-10",
+              token_profile: {issues: "write", pull_requests: "write", metadata: "read"}
+            },
+            response: {status: 422, body: error422}
+          },
+          get_after: {status: 200, pin: null},
+          cleanup_note: "This first combined token was revoked by the guarded EXIT trap; the trap intentionally did not log its response. A fresh combined token below was explicitly revoked with HTTP 204."
+        },
+        pinRetry: {
+          observed_at: "2026-09-02T02:07:48Z",
+          request: {
+            method: "PUT",
+            endpoint: "/repos/mcnewcp/my-team-fixtures/issues/comments/5503236896/pin",
+            api_version: "2026-03-10",
+            token_profile: {issues: "write", pull_requests: "write", metadata: "read"}
+          },
+          response: {status: 422, body: error422}
+        },
+        pinRetry2: {
+          observed_at: "2026-09-02T02:07:49Z",
+          request: {
+            method: "PUT",
+            endpoint: "/repos/mcnewcp/my-team-fixtures/issues/comments/5503236896/pin",
+            api_version: "2026-03-10",
+            token_profile: {issues: "write", pull_requests: "write", metadata: "read"}
+          },
+          response: {status: 422, body: error422}
+        },
+        unpin: {
+          observed_at: "2026-09-02T02:07:49Z",
+          request: {
+            method: "DELETE",
+            endpoint: "/repos/mcnewcp/my-team-fixtures/issues/comments/5503236896/pin",
+            api_version: "2026-03-10",
+            token_profile: {issues: "write", pull_requests: "write", metadata: "read"}
+          },
+          response: {status: 204, body: null}
+        },
+        unpinRetry: {
+          observed_at: "2026-09-02T02:07:49Z",
+          request: {
+            method: "DELETE",
+            endpoint: "/repos/mcnewcp/my-team-fixtures/issues/comments/5503236896/pin",
+            api_version: "2026-03-10",
+            token_profile: {issues: "write", pull_requests: "write", metadata: "read"}
+          },
+          response: {status: 204, body: null}
+        },
+        projections: {
+          observed_at: "2026-09-02T02:07:50Z",
+          single: {
+            request: {
+              method: "GET",
+              endpoint: "/repos/mcnewcp/my-team-fixtures/issues/comments/5503236896"
+            },
+            response: {
+              status: 200,
+              body: {id: 5503236896, issue_url: "https://api.github.com/repos/mcnewcp/my-team-fixtures/issues/3", pin: null}
+            }
+          },
+          list: {
+            request: {
+              method: "GET",
+              endpoint: "/repos/mcnewcp/my-team-fixtures/issues/3/comments?per_page=100"
+            },
+            response: {
+              status: 200,
+              body: [{
+                id: 5503236896,
+                minimized: null,
+                note: "No pin member was present in the raw list item."
+              }]
+            }
+          },
+          token_revoke: {method: "DELETE", endpoint: "/installation/token", status: 204, body: null}
+        },
+        ui: {
+          observed_in: "open fixture PR #3 Conversation tab",
+          supplied_as: [
+            ".scratch/images/Screenshot 2026-09-01 at 9.51.55 PM.png",
+            ".scratch/images/Screenshot 2026-09-01 at 9.52.14 PM.png"
+          ],
+          human_report: "I don't think I see any of your three.",
+          visual_record: {
+            comment_pinned_marker: "none visible",
+            pinned_conversation_area: "none visible",
+            pin_or_unpin_menu_action: "none visible",
+            visible_menu_items: [
+              "Copy link",
+              "Copy Markdown",
+              "Quote reply",
+              "Reference in new issue",
+              "Edit",
+              "Hide",
+              "Delete",
+              "Report content"
+            ]
+          },
+          limit: "GitHub never created a pin, so this records the unpinned UI control only."
+        },
+        cleanup: {
+          completed_at: "2026-09-02T02:54:33Z",
+          baseline_match: true,
+          pull_request: {number: 3, state: "closed"},
+          comment_state: "unpinned (single GET pin is null)",
+          disposable_branch_deleted: true,
+          installation_tokens_revoked: true,
+          repository: {
+            default_branch: "main",
+            default_sha: "91bdcb713bbb5e60b0db044ca8575a54e8b169fb",
+            branches: [{name: "main", sha: "91bdcb713bbb5e60b0db044ca8575a54e8b169fb", protected: false}],
+            open_pull_requests: [],
+            rulesets: []
+          }
+        }
+      });
+
+      const transitions = Object.freeze([
+        {
+          id: "PR_ONLY",
+          label: "Pull requests-only pin",
+          profile: "Pull requests write + Metadata read",
+          status: "HTTP 403",
+          pin: "null",
+          listPin: "key absent",
+          ui: "not inspected",
+          cleanup: "fixture live",
+          message: "Pull requests write alone was denied: Resource not accessible by integration.",
+          tone: "bad",
+          evidence: captures.prOnly
+        },
+        {
+          id: "ISSUES_ONLY",
+          label: "Issues-only pin",
+          profile: "Issues write + Metadata read",
+          status: "HTTP 403",
+          pin: "null",
+          listPin: "key absent",
+          ui: "not inspected",
+          cleanup: "fixture live",
+          message: "Issues write alone was also denied: Resource not accessible by integration.",
+          tone: "bad",
+          evidence: captures.issuesOnly
+        },
+        {
+          id: "COMBINED",
+          label: "Combined-profile pin",
+          profile: "Issues write + Pull requests write + Metadata read",
+          status: "HTTP 422",
+          pin: "null",
+          listPin: "key absent",
+          ui: "not inspected",
+          cleanup: "fixture live",
+          message: "The combined profile reached validation; GitHub said the issue cannot be a pull request.",
+          tone: "bad",
+          evidence: captures.combined
+        },
+        {
+          id: "PIN_RETRY",
+          label: "First combined pin retry",
+          profile: "Issues write + Pull requests write + Metadata read",
+          status: "HTTP 422",
+          pin: "null",
+          listPin: "key absent",
+          ui: "not inspected",
+          cleanup: "fixture live",
+          message: "The first retry returned the same 422 status and identical validation body.",
+          tone: "bad",
+          evidence: captures.pinRetry
+        },
+        {
+          id: "PIN_RETRY_2",
+          label: "Second combined pin retry",
+          profile: "Issues write + Pull requests write + Metadata read",
+          status: "HTTP 422",
+          pin: "null",
+          listPin: "key absent",
+          ui: "not inspected",
+          cleanup: "fixture live",
+          message: "The second retry was identical again; no pin state appeared.",
+          tone: "bad",
+          evidence: captures.pinRetry2
+        },
+        {
+          id: "UNPIN",
+          label: "Unpin never-pinned comment",
+          profile: "Issues write + Pull requests write + Metadata read",
+          status: "HTTP 204",
+          pin: "null",
+          listPin: "key absent",
+          ui: "not inspected",
+          cleanup: "fixture live",
+          message: "DELETE returned 204 with no body even though no pin had ever existed.",
+          tone: "warn",
+          evidence: captures.unpin
+        },
+        {
+          id: "UNPIN_RETRY",
+          label: "Repeated unpin",
+          profile: "Issues write + Pull requests write + Metadata read",
+          status: "HTTP 204",
+          pin: "null",
+          listPin: "key absent",
+          ui: "not inspected",
+          cleanup: "fixture live",
+          message: "The repeated DELETE also returned 204; the no-op is retry-safe but proves no prior state.",
+          tone: "warn",
+          evidence: captures.unpinRetry
+        },
+        {
+          id: "PROJECTIONS",
+          label: "Final single/list projections",
+          profile: "Combined token, then explicitly revoked",
+          status: "GET 200 / GET 200 / revoke 204",
+          pin: "null",
+          listPin: "key absent",
+          ui: "not inspected",
+          cleanup: "fixture live",
+          message: "Single GET exposed pin: null; list GET omitted the pin member entirely.",
+          tone: "warn",
+          evidence: captures.projections
+        },
+        {
+          id: "UI",
+          label: "Human Conversation UI inspection",
+          profile: "human fixture owner",
+          status: "two screenshots",
+          pin: "null",
+          listPin: "key absent",
+          ui: "no marker, area, or Pin/Unpin action",
+          cleanup: "fixture live",
+          message: "The open PR UI exposed none of the three requested pin affordances or indicators.",
+          tone: "warn",
+          evidence: captures.ui
+        },
+        {
+          id: "CLEANUP",
+          label: "Fixture cleanup",
+          profile: "all installation tokens revoked",
+          status: "baseline match: true",
+          pin: "null",
+          listPin: "key absent",
+          ui: "negative observation captured",
+          cleanup: "PR closed · branch deleted · baseline restored",
+          message: "Cleanup matched the pre-run branch, SHA, protection, ruleset, and open-PR baseline.",
+          tone: "good",
+          evidence: captures.cleanup
+        }
+      ]);
+
+      const initial = Object.freeze({
+        cursor: -1,
+        profile: "public unauthenticated GET",
+        status: "GET 200 / GET 200",
+        pin: "null",
+        listPin: "key absent",
+        ui: "not inspected",
+        cleanup: "fixture live",
+        event: "Fresh PR conversation comment: single GET had pin: null; list GET omitted the pin key.",
+        tone: "warn",
+        evidence: captures.initial
+      });
+
+      function applyCaptured(state, transition, cursor) {
+        return Object.freeze({
+          cursor,
+          profile: transition.profile,
+          status: transition.status,
+          pin: transition.pin,
+          listPin: transition.listPin,
+          ui: transition.ui,
+          cleanup: transition.cleanup,
+          event: transition.message,
+          tone: transition.tone,
+          evidence: transition.evidence
+        });
+      }
+
+      function stateAt(cursor) {
+        let state = initial;
+        for (let index = 0; index <= cursor; index += 1) {
+          state = applyCaptured(state, transitions[index], index);
+        }
+        return state;
+      }
+
+      function reduce(state, action) {
+        if (action.type === "RESET") return initial;
+        if (action.type === "START_AT") return stateAt(action.cursor);
+
+        const index = transitions.findIndex((transition) => transition.id === action.type);
+        if (index < 0) return state;
+        if (index !== state.cursor + 1) {
+          const expected = transitions[state.cursor + 1];
+          return Object.freeze({
+            ...state,
+            event: expected
+              ? `Not observed from this point. Next captured transition: ${expected.label}.`
+              : "The complete captured trace is already applied. Reset to replay it.",
+            tone: "warn",
+            evidence: transitions[index].evidence
+          });
+        }
+        return applyCaptured(state, transitions[index], index);
+      }
+
+      return Object.freeze({initial, transitions, reduce, stateAt});
+    }());
+
+    const walkthroughs = [
+      {
+        id: "full",
+        label: "Full trace",
+        startAt: -1,
+        description: "Walk from the fresh unpinned PR comment through every permission arm, retry, UI observation, and cleanup check.",
+        steps: EvidenceModel.transitions.map((transition) => transition.id)
+      },
+      {
+        id: "permissions",
+        label: "Permission boundary",
+        startAt: -1,
+        description: "Compare both isolated App-token grants with their combined superset. Watch the failure move from authorization to subject validation.",
+        steps: ["PR_ONLY", "ISSUES_ONLY", "COMBINED"]
+      },
+      {
+        id: "retry",
+        label: "Retry asymmetry",
+        startAt: 2,
+        description: "Start after the combined-profile rejection. Repeated PUT remains a stable 422; repeated DELETE silently returns 204 over the never-pinned comment.",
+        steps: ["PIN_RETRY", "PIN_RETRY_2", "UNPIN", "UNPIN_RETRY", "PROJECTIONS"]
+      },
+      {
+        id: "human",
+        label: "UI and cleanup",
+        startAt: 7,
+        description: "Apply the human screenshot observation, then verify that the live fixture returned to its exact operational baseline.",
+        steps: ["UI", "CLEANUP"]
+      }
+    ];
+
+    let state = EvidenceModel.initial;
+    let activeWalkthrough = walkthroughs[0];
+
+    const stateGrid = document.querySelector("#state-grid");
+    const eventNode = document.querySelector("#event");
+    const evidenceNode = document.querySelector("#evidence-json");
+    const tabsNode = document.querySelector("#walkthrough-tabs");
+    const panelNode = document.querySelector("#walkthrough-panel");
+
+    function statusPill(value) {
+      let tone = "warn";
+      if (value.includes("baseline match")) tone = "good";
+      if (value.includes("403") || value.includes("422")) tone = "bad";
+      return `<span class="pill ${tone}">${value}</span>`;
+    }
+
+    function renderState() {
+      const cells = [
+        ["Token/profile", state.profile],
+        ["Last response", statusPill(state.status)],
+        ["Single GET pin", `<code>${state.pin}</code>`],
+        ["List GET pin", `<code>${state.listPin}</code>`],
+        ["Conversation UI", state.ui],
+        ["Fixture", state.cleanup]
+      ];
+      stateGrid.innerHTML = cells.map(([label, value]) => `
+        <div class="state-cell"><span>${label}</span><strong>${value}</strong></div>
+      `).join("");
+      eventNode.className = `event ${state.tone}`;
+      eventNode.textContent = state.event;
+      evidenceNode.textContent = JSON.stringify(state.evidence, null, 2);
+      renderWalkthrough();
+    }
+
+    function dispatch(type) {
+      state = EvidenceModel.reduce(state, {type});
+      renderState();
+    }
+
+    function activateWalkthrough(walkthrough) {
+      activeWalkthrough = walkthrough;
+      state = EvidenceModel.reduce(state, {type: "START_AT", cursor: walkthrough.startAt});
+      renderTabs();
+      renderState();
+    }
+
+    function renderTabs() {
+      tabsNode.innerHTML = walkthroughs.map((walkthrough) => `
+        <button class="tab ${walkthrough.id === activeWalkthrough.id ? "active" : ""}"
+          type="button" data-walkthrough="${walkthrough.id}">${walkthrough.label}</button>
+      `).join("");
+      tabsNode.querySelectorAll("[data-walkthrough]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activateWalkthrough(walkthroughs.find((walkthrough) => walkthrough.id === button.dataset.walkthrough));
+        });
+      });
+    }
+
+    function renderWalkthrough() {
+      const transitionIndexes = activeWalkthrough.steps.map((id) =>
+        EvidenceModel.transitions.findIndex((transition) => transition.id === id));
+      panelNode.innerHTML = `
+        <p>${activeWalkthrough.description}</p>
+        <div class="steps">
+          ${activeWalkthrough.steps.map((id, position) => {
+            const index = transitionIndexes[position];
+            const transition = EvidenceModel.transitions[index];
+            const done = state.cursor >= index;
+            const current = state.cursor + 1 === index;
+            return `<button type="button" class="step-button ${done ? "done" : current ? "current" : ""}"
+              data-step="${id}" ${done || !current ? "disabled" : ""}>${transition.label}</button>`;
+          }).join("")}
+        </div>
+      `;
+      panelNode.querySelectorAll("[data-step]").forEach((button) => {
+        button.addEventListener("click", () => dispatch(button.dataset.step));
+      });
+    }
+
+    document.querySelectorAll("[data-action]").forEach((button) => {
+      button.addEventListener("click", () => dispatch(button.dataset.action));
+    });
+    document.querySelector("#reset-button").addEventListener("click", () => {
+      activeWalkthrough = walkthroughs[0];
+      state = EvidenceModel.reduce(state, {type: "RESET"});
+      renderTabs();
+      renderState();
+    });
+
+    renderTabs();
+    renderState();
+  </script>
+</body>
+</html>
