@@ -1,0 +1,1219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PROTOTYPE — Audit check-run retries</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #5f6b7d;
+      --line: #d8deea;
+      --paper: #ffffff;
+      --soft: #f5f7fb;
+      --accent: #3159c6;
+      --accent-soft: #eef2ff;
+      --good: #18794e;
+      --good-soft: #eaf8f0;
+      --warn: #946200;
+      --warn-soft: #fff8df;
+      --bad: #b42318;
+      --bad-soft: #fff0ee;
+      --code: #101828;
+      --shadow: 0 12px 32px rgba(23, 32, 51, 0.08);
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(49, 89, 198, 0.09), transparent 30rem),
+        #f8f9fc;
+      font-family:
+        Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button {
+      font: inherit;
+      cursor: pointer;
+    }
+
+    code,
+    pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 42px 0 72px;
+    }
+
+    .hero {
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      margin-bottom: 12px;
+      padding: 5px 10px;
+      border: 1px solid #f1b8b3;
+      border-radius: 999px;
+      color: var(--bad);
+      background: var(--bad-soft);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 900px;
+      margin-bottom: 12px;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.04;
+      letter-spacing: -0.04em;
+    }
+
+    .hero > p {
+      max-width: 900px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .question,
+    .section {
+      margin-top: 22px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .question {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+      gap: 26px;
+    }
+
+    .question h2,
+    .section-heading h2 {
+      margin-bottom: 6px;
+      font-size: 22px;
+    }
+
+    .question p,
+    .section-heading p,
+    .muted {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .facts {
+      display: grid;
+      gap: 9px;
+      margin: 0;
+    }
+
+    .fact {
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--soft);
+    }
+
+    .fact dt {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .fact dd {
+      margin: 4px 0 0;
+      overflow-wrap: anywhere;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .section-heading {
+      display: flex;
+      gap: 18px;
+      align-items: start;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .quiet-button {
+      flex: none;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: var(--paper);
+      font-weight: 700;
+    }
+
+    .quiet-button:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .state-cell {
+      min-height: 96px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .state-cell span {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .state-cell strong {
+      display: block;
+      overflow-wrap: anywhere;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .pill.good {
+      color: var(--good);
+      background: var(--good-soft);
+    }
+
+    .pill.bad {
+      color: var(--bad);
+      background: var(--bad-soft);
+    }
+
+    .pill.warn {
+      color: var(--warn);
+      background: var(--warn-soft);
+    }
+
+    .event {
+      margin-top: 12px;
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--muted);
+      background: var(--soft);
+      font-size: 14px;
+    }
+
+    .event.good {
+      border-color: #a8dfc1;
+      color: var(--good);
+      background: var(--good-soft);
+    }
+
+    .event.bad {
+      border-color: #f1b8b3;
+      color: var(--bad);
+      background: var(--bad-soft);
+    }
+
+    .event.warn {
+      border-color: #ead28a;
+      color: var(--warn);
+      background: var(--warn-soft);
+    }
+
+    .rule-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 16px 0 20px;
+    }
+
+    .rule-strip div {
+      padding: 10px 12px;
+      border-left: 3px solid var(--accent);
+      color: var(--muted);
+      background: var(--accent-soft);
+      font-size: 13px;
+    }
+
+    .rule-strip strong {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--ink);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      padding: 10px 11px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--muted);
+      background: var(--soft);
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    tr.selected td {
+      background: var(--accent-soft);
+    }
+
+    .empty {
+      padding: 22px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    details.evidence {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #fbfcfe;
+    }
+
+    details.evidence summary {
+      padding: 10px 12px;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    details.evidence pre {
+      max-height: 420px;
+      margin: 0;
+      padding: 14px;
+      overflow: auto;
+      border-top: 1px solid var(--line);
+      color: #dce6ff;
+      background: var(--code);
+      font-size: 11px;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    .action-groups {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .action-group {
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .action-group h3 {
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    .button-stack,
+    .steps {
+      display: grid;
+      gap: 8px;
+    }
+
+    .action-button,
+    .step-button {
+      width: 100%;
+      padding: 9px 11px;
+      border: 1px solid #bac4d7;
+      border-radius: 8px;
+      color: var(--ink);
+      background: var(--paper);
+      text-align: left;
+      font-weight: 680;
+    }
+
+    .action-button:hover,
+    .step-button:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .action-button.danger {
+      border-color: #e8aaa5;
+      color: var(--bad);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 3px;
+    }
+
+    .tab {
+      flex: none;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--paper);
+      font-weight: 700;
+    }
+
+    .tab.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .walkthrough-panel {
+      margin-top: 15px;
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .walkthrough-panel p {
+      color: var(--muted);
+    }
+
+    .step-button {
+      position: relative;
+      padding-left: 44px;
+      counter-increment: step;
+    }
+
+    .steps {
+      counter-reset: step;
+    }
+
+    .step-button::before {
+      position: absolute;
+      left: 12px;
+      width: 21px;
+      height: 21px;
+      border-radius: 50%;
+      color: white;
+      background: #98a2b3;
+      content: counter(step);
+      font-size: 12px;
+      line-height: 21px;
+      text-align: center;
+    }
+
+    .step-button.current {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .step-button.current::before {
+      background: var(--accent);
+    }
+
+    .step-button.done {
+      color: var(--good);
+      background: var(--good-soft);
+    }
+
+    .step-button.done::before {
+      background: var(--good);
+      content: "✓";
+    }
+
+    .step-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .findings {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .finding {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .finding h3 {
+      margin-bottom: 6px;
+      font-size: 16px;
+    }
+
+    .finding p {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .source-list {
+      margin: 12px 0 0;
+      padding-left: 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .source-list li + li {
+      margin-top: 6px;
+    }
+
+    @media (max-width: 900px) {
+      .question,
+      .action-groups,
+      .findings {
+        grid-template-columns: 1fr;
+      }
+
+      .state-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .rule-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 560px) {
+      .shell {
+        width: min(100% - 20px, 1180px);
+        padding-top: 24px;
+      }
+
+      .question,
+      .section {
+        padding: 17px;
+      }
+
+      .state-grid,
+      .rule-strip {
+        grid-template-columns: 1fr;
+      }
+
+      .section-heading {
+        display: block;
+      }
+
+      .section-heading .quiet-button {
+        margin-top: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <span class="eyebrow">Throwaway logic prototype · captured 2026-09-02</span>
+      <h1>What does GitHub actually do with retried Audit check runs?</h1>
+      <p>
+        Replay the live evidence from fixture pull request
+        <a href="https://github.com/mcnewcp/my-team-fixtures/pull/1">mcnewcp/my-team-fixtures#1</a>.
+        This is an observation tool, not a proposed architecture.
+      </p>
+    </header>
+
+    <section class="question">
+      <div>
+        <h2>The question</h2>
+        <p>
+          On one real head commit, can a least-privilege principal create and update an Audit
+          check run? Is a repeated create with the same head SHA, name, and external ID
+          idempotent? When conclusions conflict, which run controls the App-bound required
+          check and the pull request's merge state?
+        </p>
+        <p style="margin-top: 12px;">
+          Every state below is a redacted snapshot observed through GitHub REST and GraphQL.
+          Free play follows the captured order; an out-of-order click is rejected instead of
+          inventing platform behavior.
+        </p>
+      </div>
+      <dl class="facts">
+        <div class="fact">
+          <dt>Working principal</dt>
+          <dd>GitHub App 4799292 · Checks: write + Metadata: read</dd>
+        </div>
+        <div class="fact">
+          <dt>Installation token</dt>
+          <dd>201 at 01:00:06Z · expires 02:00:06Z · revoked 204 at 01:00:39Z</dd>
+        </div>
+        <div class="fact">
+          <dt>Fine-grained PAT comparison</dt>
+          <dd>Unprovisionable: GitHub's live picker and canonical permission table expose no Checks grant</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="section" aria-labelledby="state-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="state-title">Current captured state</h2>
+          <p>The complete Audit state, required-check projection, and merge observation after this transition.</p>
+        </div>
+        <button class="quiet-button" id="reset-button" type="button">Reset full trace</button>
+      </div>
+      <div class="state-grid" id="state-grid"></div>
+      <div class="event" id="event"></div>
+      <div class="rule-strip">
+        <div><strong>Required context</strong><code>my-team / Audit</code></div>
+        <div><strong>Bound producer</strong>App ID <code>4799292</code></div>
+        <div><strong>Target</strong><code>main</code> · strict false</div>
+        <div><strong>Fixture identity</strong>PR #1 · head <code>002aff2</code></div>
+      </div>
+      <h3>All Audit runs returned by <code>filter=all</code></h3>
+      <div class="table-wrap" id="runs-table"></div>
+      <p class="muted" style="margin-top: 10px;">
+        The highlighted row is the one GitHub exposed in the PR status-check rollup. The
+        complete endpoint retained every run. GitGuardian's separate successful run is omitted
+        from this table but remains recorded in the evidence panel.
+      </p>
+      <details class="evidence">
+        <summary>Redacted API capture for this transition</summary>
+        <pre id="evidence-json"></pre>
+      </details>
+    </section>
+
+    <section class="section" aria-labelledby="actions-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="actions-title">Free play</h2>
+          <p>Try any action. Only transitions actually observed in the live trace will advance.</p>
+        </div>
+      </div>
+      <div class="action-groups">
+        <div class="action-group">
+          <h3>Create and target one run</h3>
+          <div class="button-stack">
+            <button class="action-button" data-action="CREATE_A" type="button">POST attempt A · in progress</button>
+            <button class="action-button" data-action="UPDATE_A" type="button">PATCH attempt A by numeric ID · success</button>
+          </div>
+        </div>
+        <div class="action-group">
+          <h3>Repeat the identity tuple</h3>
+          <div class="button-stack">
+            <button class="action-button" data-action="CREATE_B" type="button">POST same SHA/name/external ID again</button>
+          </div>
+        </div>
+        <div class="action-group">
+          <h3>Conflict and recover</h3>
+          <div class="button-stack">
+            <button class="action-button danger" data-action="CREATE_C" type="button">POST attempt C · failure</button>
+            <button class="action-button" data-action="CREATE_D" type="button">POST newer attempt D · success</button>
+            <button class="action-button" data-action="UPDATE_C" type="button">PATCH old attempt C · success</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="walkthrough-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="walkthrough-title">Guided walkthroughs</h2>
+          <p>Each tab resets to a known captured state. Press the highlighted steps in order.</p>
+        </div>
+      </div>
+      <div class="tabs" id="walkthrough-tabs" role="tablist"></div>
+      <div class="walkthrough-panel" id="walkthrough-panel"></div>
+    </section>
+
+    <section class="section" aria-labelledby="answer-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="answer-title">What this one fixture established</h2>
+          <p>Durable empirical facts only; architecture remains deliberately undecided.</p>
+        </div>
+      </div>
+      <div class="findings">
+        <article class="finding">
+          <h3>Create is not idempotent on the apparent identity tuple</h3>
+          <p>
+            Four POSTs sharing App, head SHA, name, external ID, and check-suite ID returned
+            HTTP 201 and four distinct numeric run IDs. The external ID behaved as caller
+            metadata, not a uniqueness key.
+          </p>
+        </article>
+        <article class="finding">
+          <h3>Numeric run ID is the update handle</h3>
+          <p>
+            PATCH returned HTTP 200 and mutated the addressed resource without creating a new
+            ID. Changing attempt C from failure to success left its original
+            <code>completed_at</code> timestamp intact when no replacement timestamp was sent.
+          </p>
+        </article>
+        <article class="finding">
+          <h3>The required-check projection followed the newest created run</h3>
+          <p>
+            A newest failure made the PR BLOCKED. A still-newer success made it CLEAN while the
+            older failure remained visible through <code>filter=all</code>. GraphQL's PR rollup
+            likewise exposed only the newest Audit run for this App/name/SHA.
+          </p>
+        </article>
+        <article class="finding">
+          <h3>The least-privilege App route worked; the advertised PAT route could not be provisioned</h3>
+          <p>
+            Mutation responses advertised <code>checks=write</code>. The selected-repository
+            installation token carried only Checks write and Metadata read, expired after one
+            hour, stayed in memory, and was explicitly revoked after the trace.
+          </p>
+        </article>
+      </div>
+      <ul class="source-list">
+        <li><a href="https://docs.github.com/en/rest/checks/runs?apiVersion=2026-03-10">Check-run endpoint documentation</a> advertises a fine-grained PAT Checks grant.</li>
+        <li><a href="https://docs.github.com/en/rest/guides/using-the-rest-api-to-interact-with-checks">Checks API guide</a> says write access is exclusive to GitHub Apps.</li>
+        <li><a href="https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens">Canonical fine-grained PAT permission table</a> has no Checks section.</li>
+      </ul>
+    </section>
+  </main>
+
+  <script>
+    const EvidenceModel = (function () {
+      "use strict";
+
+      const constants = Object.freeze({
+        repo: "mcnewcp/my-team-fixtures",
+        pr: 1,
+        headSha: "002aff239e1f28d7c98aeddbcf4f01f74f723ff0",
+        baseSha: "91bdcb713bbb5e60b0db044ca8575a54e8b169fb",
+        checkName: "my-team / Audit",
+        externalId: "my-team:prototype-102:audit",
+        app: {
+          id: 4799292,
+          slug: "my-team-audit-check-fixture",
+          permissions: { checks: "write", metadata: "read" }
+        },
+        checkSuiteId: 90990496391,
+        apiVersion: "2026-03-10",
+        otherCheck: {
+          id: 100084153213,
+          name: "GitGuardian Security Checks",
+          app: { id: 46505, slug: "gitguardian" },
+          conclusion: "success",
+          startedAt: "2026-09-02T00:56:26Z",
+          completedAt: "2026-09-02T00:56:27Z",
+          checkSuiteId: 90990496006
+        }
+      });
+
+      const runs = Object.freeze({
+        aRunning: {
+          id: 100084904124,
+          label: "A",
+          status: "in_progress",
+          conclusion: null,
+          startedAt: "2026-09-02T01:00:10Z",
+          completedAt: null,
+          outputTitle: "Attempt A — running"
+        },
+        aSuccess: {
+          id: 100084904124,
+          label: "A",
+          status: "completed",
+          conclusion: "success",
+          startedAt: "2026-09-02T01:00:10Z",
+          completedAt: "2026-09-02T01:00:15Z",
+          outputTitle: "Attempt A — success"
+        },
+        bSuccess: {
+          id: 100084940070,
+          label: "B",
+          status: "completed",
+          conclusion: "success",
+          startedAt: "2026-09-02T01:00:20Z",
+          completedAt: "2026-09-02T01:00:20Z",
+          outputTitle: "Attempt B — duplicate create"
+        },
+        cFailure: {
+          id: 100084957374,
+          label: "C",
+          status: "completed",
+          conclusion: "failure",
+          startedAt: "2026-09-02T01:00:24Z",
+          completedAt: "2026-09-02T01:00:24Z",
+          outputTitle: "Attempt C — failure"
+        },
+        cSuccess: {
+          id: 100084957374,
+          label: "C",
+          status: "completed",
+          conclusion: "success",
+          startedAt: "2026-09-02T01:00:24Z",
+          completedAt: "2026-09-02T01:00:24Z",
+          outputTitle: "Attempt C — repaired to success"
+        },
+        dSuccess: {
+          id: 100084973861,
+          label: "D",
+          status: "completed",
+          conclusion: "success",
+          startedAt: "2026-09-02T01:00:29Z",
+          completedAt: "2026-09-02T01:00:29Z",
+          outputTitle: "Attempt D — later success"
+        }
+      });
+
+      function enrich(run) {
+        return Object.assign({}, run, {
+          name: constants.checkName,
+          headSha: constants.headSha,
+          externalId: constants.externalId,
+          app: constants.app,
+          checkSuiteId: constants.checkSuiteId,
+          htmlUrl: "https://github.com/mcnewcp/my-team-fixtures/runs/" + run.id
+        });
+      }
+
+      function mutation(method, path, status, date, requestId, response) {
+        return {
+          request: {
+            method: method,
+            path: path,
+            apiVersion: constants.apiVersion,
+            authorization: "REDACTED"
+          },
+          response: {
+            httpStatus: status,
+            date: date,
+            requestId: requestId,
+            acceptedPermissions: "checks=write",
+            body: response ? enrich(response) : null
+          }
+        };
+      }
+
+      const snapshots = Object.freeze({
+        baseline: {
+          title: "Required Audit check absent",
+          observedAt: "2026-09-02T01:00:09Z",
+          restState: "blocked",
+          graphState: "BLOCKED",
+          selectedRunId: null,
+          auditRuns: [],
+          tone: "warn",
+          message: "Protection was active, but no Audit run existed. REST and GraphQL both reported the PR blocked.",
+          capture: {
+            setup: {
+              priorClassicProtection: null,
+              priorRulesets: [],
+              temporaryProtection: {
+                context: constants.checkName,
+                appId: constants.app.id,
+                strict: false,
+                enforceAdmins: true
+              }
+            },
+            token: {
+              mintHttpStatus: 201,
+              mintedAt: "2026-09-02T01:00:06Z",
+              expiresAt: "2026-09-02T02:00:06Z",
+              permissions: constants.app.permissions,
+              repositorySelection: "selected",
+              token: "REDACTED"
+            },
+            mergeObservation: { rest: "blocked", graphQL: "BLOCKED" },
+            otherCheck: constants.otherCheck
+          }
+        },
+        aRunning: {
+          title: "Attempt A is running",
+          observedAt: "2026-09-02T01:00:14Z",
+          restState: "blocked",
+          graphState: "BLOCKED",
+          selectedRunId: runs.aRunning.id,
+          auditRuns: [runs.aRunning],
+          tone: "warn",
+          message: "POST returned 201 and a numeric run ID. The required check stayed blocked while that run was in progress.",
+          capture: mutation("POST", "/repos/mcnewcp/my-team-fixtures/check-runs", 201, "2026-09-02T01:00:10Z", "C041:25E7D5:31009A8:A15E017:6A97751A", runs.aRunning)
+        },
+        aSuccess: {
+          title: "Attempt A updated in place",
+          observedAt: "2026-09-02T01:00:19Z",
+          restState: "clean",
+          graphState: "CLEAN",
+          selectedRunId: runs.aSuccess.id,
+          auditRuns: [runs.aSuccess],
+          tone: "good",
+          message: "PATCH by run ID returned 200, preserved ID 100084904124, and changed the required check to success. The PR became clean.",
+          capture: mutation("PATCH", "/repos/mcnewcp/my-team-fixtures/check-runs/100084904124", 200, "2026-09-02T01:00:15Z", "C046:29CA81:30FB68A:A15EE10:6A97751F", runs.aSuccess)
+        },
+        duplicateSuccess: {
+          title: "Exact identity-tuple retry created attempt B",
+          observedAt: "2026-09-02T01:00:24Z",
+          restState: "clean",
+          graphState: "CLEAN",
+          selectedRunId: runs.bSuccess.id,
+          auditRuns: [runs.bSuccess, runs.aSuccess],
+          tone: "good",
+          message: "The repeated POST returned 201 and new ID 100084940070. GitHub did not deduplicate the shared SHA, name, and external ID.",
+          capture: mutation("POST", "/repos/mcnewcp/my-team-fixtures/check-runs", 201, "2026-09-02T01:00:20Z", "C04A:22EDC7:2EEDE5D:9B3E209:6A977523", runs.bSuccess)
+        },
+        failureLatest: {
+          title: "Newest run fails while older runs succeed",
+          observedAt: "2026-09-02T01:00:28Z",
+          restState: "blocked",
+          graphState: "BLOCKED",
+          selectedRunId: runs.cFailure.id,
+          auditRuns: [runs.cFailure, runs.bSuccess, runs.aSuccess],
+          tone: "bad",
+          message: "Attempt C returned 201 with failure. GitHub's PR rollup selected C, and the required check blocked the PR.",
+          capture: mutation("POST", "/repos/mcnewcp/my-team-fixtures/check-runs", 201, "2026-09-02T01:00:25Z", "C04E:28CC18:2DB96DA:96EC870:6A977528", runs.cFailure)
+        },
+        successLatestWithOldFailure: {
+          title: "Newest run succeeds while attempt C remains failed",
+          observedAt: "2026-09-02T01:00:33Z",
+          restState: "clean",
+          graphState: "CLEAN",
+          selectedRunId: runs.dSuccess.id,
+          auditRuns: [runs.dSuccess, runs.cFailure, runs.bSuccess, runs.aSuccess],
+          tone: "good",
+          message: "Attempt D returned 201 with success. The PR became clean even though filter=all still returned failed attempt C.",
+          capture: mutation("POST", "/repos/mcnewcp/my-team-fixtures/check-runs", 201, "2026-09-02T01:00:29Z", "C052:2C0361:32EEC6B:A755176:6A97752D", runs.dSuccess)
+        },
+        allSuccess: {
+          title: "Every retained Audit run succeeds",
+          observedAt: "2026-09-02T01:00:38Z",
+          restState: "clean",
+          graphState: "CLEAN",
+          selectedRunId: runs.dSuccess.id,
+          auditRuns: [runs.dSuccess, runs.cSuccess, runs.bSuccess, runs.aSuccess],
+          tone: "good",
+          message: "PATCH changed old attempt C to success without changing its ID or completed_at. D remained the rollup selection; the PR stayed clean.",
+          capture: Object.assign(
+            mutation("PATCH", "/repos/mcnewcp/my-team-fixtures/check-runs/100084957374", 200, "2026-09-02T01:00:34Z", "C056:17C28B:2F8B9FE:9CFA4CD:6A977532", runs.cSuccess),
+            {
+              tokenRevocation: {
+                method: "DELETE",
+                path: "/installation/token",
+                httpStatus: 204,
+                observedAt: "2026-09-02T01:00:39Z",
+                requestId: "C05A:2C0361:32F2B8D:A761ECD:6A977537"
+              }
+            }
+          )
+        }
+      });
+
+      const actions = Object.freeze({
+        CREATE_A: { from: "baseline", to: "aRunning", label: "POST attempt A" },
+        UPDATE_A: { from: "aRunning", to: "aSuccess", label: "PATCH attempt A" },
+        CREATE_B: { from: "aSuccess", to: "duplicateSuccess", label: "POST duplicate attempt B" },
+        CREATE_C: { from: "duplicateSuccess", to: "failureLatest", label: "POST failed attempt C" },
+        CREATE_D: { from: "failureLatest", to: "successLatestWithOldFailure", label: "POST successful attempt D" },
+        UPDATE_C: { from: "successLatestWithOldFailure", to: "allSuccess", label: "PATCH old attempt C" }
+      });
+
+      function clone(value) {
+        return JSON.parse(JSON.stringify(value));
+      }
+
+      function initialState(snapshotId) {
+        const id = snapshotId || "baseline";
+        return {
+          snapshotId: id,
+          last: {
+            tone: "neutral",
+            message: "Loaded captured state: " + snapshots[id].title + "."
+          }
+        };
+      }
+
+      function transition(current, action) {
+        if (action.type === "RESET") {
+          return initialState("baseline");
+        }
+        const rule = actions[action.type];
+        if (!rule) {
+          return {
+            snapshotId: current.snapshotId,
+            last: { tone: "bad", message: "Unknown replay action; no state changed." }
+          };
+        }
+        if (current.snapshotId !== rule.from) {
+          return {
+            snapshotId: current.snapshotId,
+            last: {
+              tone: "warn",
+              message: "Not replayed: " + rule.label + " was observed only after “" + snapshots[rule.from].title + ".” Reset or use a guided walkthrough to reach that state."
+            }
+          };
+        }
+        return {
+          snapshotId: rule.to,
+          last: { tone: snapshots[rule.to].tone, message: snapshots[rule.to].message }
+        };
+      }
+
+      function snapshot(state) {
+        return clone(snapshots[state.snapshotId]);
+      }
+
+      return Object.freeze({
+        constants: constants,
+        actions: actions,
+        initialState: initialState,
+        transition: transition,
+        snapshot: snapshot
+      });
+    }());
+
+    const walkthroughs = [
+      {
+        id: "full",
+        title: "Complete trace",
+        start: "baseline",
+        description: "Replay every observed transition from the missing required check through token-safe recovery.",
+        steps: [
+          ["CREATE_A", "Create attempt A in progress"],
+          ["UPDATE_A", "Update A by numeric run ID to success"],
+          ["CREATE_B", "Repeat the same SHA, name, and external ID"],
+          ["CREATE_C", "Create a newer failed conclusion"],
+          ["CREATE_D", "Create a still-newer successful conclusion"],
+          ["UPDATE_C", "Return the retained failed run to success"]
+        ]
+      },
+      {
+        id: "retry",
+        title: "Update vs duplicate create",
+        start: "baseline",
+        description: "Watch PATCH keep one ID while a repeated POST returns a second ID despite the same apparent identity tuple.",
+        steps: [
+          ["CREATE_A", "POST creates numeric run 100084904124"],
+          ["UPDATE_A", "PATCH keeps ID 100084904124"],
+          ["CREATE_B", "Repeated POST creates distinct ID 100084940070"]
+        ]
+      },
+      {
+        id: "conflict",
+        title: "Conflicting required checks",
+        start: "duplicateSuccess",
+        description: "Start with two successful duplicates. The newest conclusion—not unanimity across retained runs—tracked the required-check result in this fixture.",
+        steps: [
+          ["CREATE_C", "Newest failure makes the PR blocked"],
+          ["CREATE_D", "Newer success makes it clean while C still fails"],
+          ["UPDATE_C", "Repair C; all retained runs now succeed"]
+        ]
+      }
+    ];
+
+    let state = EvidenceModel.initialState("baseline");
+    let selectedWalkthrough = walkthroughs[0].id;
+    let walkthroughProgress = 0;
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function stateTone(snapshot) {
+      if (snapshot.graphState === "CLEAN") {
+        return "good";
+      }
+      if (snapshot.auditRuns.some(function (run) { return run.conclusion === "failure"; })) {
+        return "bad";
+      }
+      return "warn";
+    }
+
+    function renderState() {
+      const snapshot = EvidenceModel.snapshot(state);
+      const selected = snapshot.auditRuns.find(function (run) {
+        return run.id === snapshot.selectedRunId;
+      });
+      const tone = stateTone(snapshot);
+      const fields = [
+        ["Trace point", snapshot.title],
+        ["Observed", snapshot.observedAt],
+        ["REST merge state", '<span class="pill ' + tone + '">' + snapshot.restState + "</span>"],
+        ["GraphQL merge state", '<span class="pill ' + tone + '">' + snapshot.graphState + "</span>"],
+        ["PR rollup selected", selected ? "Attempt " + selected.label + " · " + selected.id : "No Audit run"],
+        ["Audit runs retained", String(snapshot.auditRuns.length)]
+      ];
+      document.getElementById("state-grid").innerHTML = fields.map(function (field) {
+        return '<div class="state-cell"><span>' + escapeHtml(field[0]) + "</span><strong>" + field[1] + "</strong></div>";
+      }).join("");
+      const event = document.getElementById("event");
+      event.className = "event " + (state.last.tone === "neutral" ? "" : state.last.tone);
+      event.textContent = state.last.message;
+
+      const table = document.getElementById("runs-table");
+      if (snapshot.auditRuns.length === 0) {
+        table.innerHTML = '<div class="empty">No Audit run existed at this captured point.</div>';
+      } else {
+        const rows = snapshot.auditRuns.map(function (run) {
+          const conclusion = run.conclusion || "—";
+          const resultTone = conclusion === "success" ? "good" : conclusion === "failure" ? "bad" : "warn";
+          const runUrl = "https://github.com/mcnewcp/my-team-fixtures/runs/" + run.id;
+          return '<tr class="' + (run.id === snapshot.selectedRunId ? "selected" : "") + '">' +
+            "<td>" + escapeHtml(run.label) + (run.id === snapshot.selectedRunId ? " · rollup" : "") + "</td>" +
+            '<td><a href="' + escapeHtml(runUrl) + '">' + escapeHtml(run.id) + "</a></td>" +
+            "<td>" + escapeHtml(run.status) + "</td>" +
+            '<td><span class="pill ' + resultTone + '">' + escapeHtml(conclusion) + "</span></td>" +
+            "<td>" + escapeHtml(run.startedAt) + "</td>" +
+            "<td>" + escapeHtml(run.completedAt || "—") + "</td>" +
+            "<td>" + escapeHtml(run.externalId) + "</td>" +
+            "</tr>";
+        }).join("");
+        table.innerHTML = "<table><thead><tr><th>Attempt</th><th>Run ID</th><th>Status</th><th>Conclusion</th><th>Started</th><th>Completed</th><th>External ID</th></tr></thead><tbody>" + rows + "</tbody></table>";
+      }
+
+      const evidence = Object.assign({}, snapshot.capture, {
+        mergeObservation: {
+          observedAt: snapshot.observedAt,
+          rest: {
+            mergeable: true,
+            rebaseable: true,
+            mergeableState: snapshot.restState,
+            headSha: EvidenceModel.constants.headSha,
+            baseSha: EvidenceModel.constants.baseSha
+          },
+          graphQL: {
+            mergeable: "MERGEABLE",
+            mergeStateStatus: snapshot.graphState,
+            selectedAuditRunId: snapshot.selectedRunId
+          }
+        },
+        allAuditRuns: snapshot.auditRuns.map(function (run) {
+          return Object.assign({}, run, {
+            name: EvidenceModel.constants.checkName,
+            headSha: EvidenceModel.constants.headSha,
+            externalId: EvidenceModel.constants.externalId,
+            appId: EvidenceModel.constants.app.id,
+            checkSuiteId: EvidenceModel.constants.checkSuiteId
+          });
+        }),
+        unrelatedCheckRun: EvidenceModel.constants.otherCheck
+      });
+      document.getElementById("evidence-json").textContent = JSON.stringify(evidence, null, 2);
+    }
+
+    function renderWalkthrough() {
+      document.getElementById("walkthrough-tabs").innerHTML = walkthroughs.map(function (item) {
+        return '<button class="tab ' + (item.id === selectedWalkthrough ? "active" : "") + '" data-walkthrough="' + escapeHtml(item.id) + '" type="button" role="tab">' + escapeHtml(item.title) + "</button>";
+      }).join("");
+      const selected = walkthroughs.find(function (item) {
+        return item.id === selectedWalkthrough;
+      });
+      const steps = selected.steps.map(function (step, index) {
+        const className = index < walkthroughProgress ? "done" : index === walkthroughProgress ? "current" : "";
+        return '<button class="step-button ' + className + '" data-step="' + index + '" type="button" ' + (index > walkthroughProgress ? "disabled" : "") + ">" + escapeHtml(step[1]) + "</button>";
+      }).join("");
+      document.getElementById("walkthrough-panel").innerHTML = "<h3>" + escapeHtml(selected.title) + "</h3><p>" + escapeHtml(selected.description) + '</p><div class="steps">' + steps + "</div>";
+    }
+
+    function renderAll() {
+      renderState();
+      renderWalkthrough();
+    }
+
+    function dispatch(type) {
+      state = EvidenceModel.transition(state, { type: type });
+      renderAll();
+    }
+
+    document.addEventListener("click", function (event) {
+      const actionButton = event.target.closest("[data-action]");
+      if (actionButton) {
+        dispatch(actionButton.dataset.action);
+        return;
+      }
+      const tab = event.target.closest("[data-walkthrough]");
+      if (tab) {
+        selectedWalkthrough = tab.dataset.walkthrough;
+        walkthroughProgress = 0;
+        const selected = walkthroughs.find(function (item) {
+          return item.id === selectedWalkthrough;
+        });
+        state = EvidenceModel.initialState(selected.start);
+        renderAll();
+        return;
+      }
+      const stepButton = event.target.closest("[data-step]");
+      if (stepButton) {
+        const selected = walkthroughs.find(function (item) {
+          return item.id === selectedWalkthrough;
+        });
+        const index = Number(stepButton.dataset.step);
+        if (index === walkthroughProgress) {
+          dispatch(selected.steps[index][0]);
+          walkthroughProgress += 1;
+          renderWalkthrough();
+        }
+      }
+    });
+
+    document.getElementById("reset-button").addEventListener("click", function () {
+      state = EvidenceModel.initialState("baseline");
+      selectedWalkthrough = walkthroughs[0].id;
+      walkthroughProgress = 0;
+      renderAll();
+    });
+
+    renderAll();
+  </script>
+</body>
+</html>
