@@ -1,0 +1,1853 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PROTOTYPE — Review finding and Ledger protocol</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #5d687c;
+      --line: #d8deea;
+      --soft: #f5f7fb;
+      --paper: #ffffff;
+      --accent: #3159c6;
+      --accent-soft: #eef2ff;
+      --good: #18794e;
+      --good-soft: #eaf8f0;
+      --warn: #946200;
+      --warn-soft: #fff8df;
+      --bad: #b42318;
+      --bad-soft: #fff0ee;
+      --code: #101828;
+      --shadow: 0 12px 32px rgba(23, 32, 51, 0.08);
+      color-scheme: light;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(49, 89, 198, 0.09), transparent 30rem),
+        #f8f9fc;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button { font: inherit; cursor: pointer; }
+    code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    code { font-size: 0.9em; }
+    a { color: var(--accent); }
+    h1, h2, h3, h4, p { margin-top: 0; }
+
+    .shell {
+      width: min(1220px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 42px 0 72px;
+    }
+
+    .hero { margin-bottom: 24px; }
+
+    .eyebrow {
+      display: inline-flex;
+      margin-bottom: 12px;
+      padding: 5px 10px;
+      border: 1px solid #f1b8b3;
+      border-radius: 999px;
+      color: var(--bad);
+      background: var(--bad-soft);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 980px;
+      margin-bottom: 12px;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.04;
+      letter-spacing: -0.04em;
+    }
+
+    .hero > p {
+      max-width: 940px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .question,
+    .section {
+      margin-top: 22px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .question {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+      gap: 28px;
+    }
+
+    .question h2,
+    .section-heading h2 { margin-bottom: 6px; font-size: 22px; letter-spacing: -0.02em; }
+    .question p,
+    .section-heading p,
+    .muted { color: var(--muted); }
+    .question p:last-child { margin-bottom: 0; }
+
+    .proposal {
+      display: grid;
+      gap: 9px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .proposal li {
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--soft);
+      font-size: 14px;
+    }
+
+    .proposal strong { display: block; margin-bottom: 2px; }
+
+    .section-heading {
+      display: flex;
+      gap: 18px;
+      align-items: start;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .section-heading p { margin-bottom: 0; }
+
+    .quiet-button,
+    .action-button,
+    .scenario-step,
+    .tab {
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--ink);
+      background: var(--paper);
+      font-weight: 680;
+    }
+
+    .quiet-button { flex: none; padding: 8px 12px; }
+    .quiet-button:hover,
+    .action-button:hover,
+    .scenario-step:hover:not(:disabled),
+    .tab:hover { border-color: var(--accent); color: var(--accent); }
+
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .state-cell {
+      min-height: 94px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--soft);
+    }
+
+    .state-cell span {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .state-cell strong {
+      display: block;
+      overflow-wrap: anywhere;
+      font-size: 14px;
+      line-height: 1.3;
+    }
+
+    .state-cell strong.good { color: var(--good); }
+    .state-cell strong.warn { color: var(--warn); }
+    .state-cell strong.bad { color: var(--bad); }
+
+    .event {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      background: var(--soft);
+      font-size: 14px;
+    }
+
+    .event[data-tone="good"] { border-color: #a9dcc2; color: var(--good); background: var(--good-soft); }
+    .event[data-tone="warn"] { border-color: #ead496; color: var(--warn); background: var(--warn-soft); }
+    .event[data-tone="bad"] { border-color: #f1b8b3; color: var(--bad); background: var(--bad-soft); }
+
+    .action-groups {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .action-group {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--soft);
+    }
+
+    .action-group h3 { margin-bottom: 4px; font-size: 15px; }
+    .action-group p { margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .action-button {
+      padding: 8px 11px;
+      background: var(--paper);
+      font-size: 13px;
+    }
+
+    .action-button.danger { color: var(--bad); }
+    .action-button:disabled,
+    .scenario-step:disabled { cursor: not-allowed; opacity: 0.48; }
+
+    .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+
+    .tab { padding: 8px 13px; color: var(--muted); font-size: 13px; }
+    .tab[aria-selected="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+    .walkthrough {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--soft);
+    }
+
+    .walkthrough h3 { margin-bottom: 5px; font-size: 18px; }
+    .walkthrough > p { max-width: 900px; margin-bottom: 14px; color: var(--muted); }
+    .scenario-steps { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
+
+    .scenario-step { padding: 9px 13px; background: var(--paper); font-size: 13px; }
+    .scenario-step.current { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 2px rgba(49, 89, 198, 0.1); }
+    .scenario-step.done { color: var(--good); border-color: #a9dcc2; background: var(--good-soft); }
+    .arrow { color: #9aa4b5; font-weight: 800; }
+
+    .artifact-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+      gap: 18px;
+    }
+
+    .artifact {
+      min-width: 0;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--soft);
+    }
+
+    .artifact > h3 { margin-bottom: 4px; font-size: 17px; }
+    .artifact > p { color: var(--muted); font-size: 13px; }
+
+    .empty {
+      display: grid;
+      min-height: 180px;
+      place-items: center;
+      padding: 24px;
+      border: 1px dashed #b9c2d1;
+      border-radius: 10px;
+      color: var(--muted);
+      text-align: center;
+      background: var(--paper);
+    }
+
+    .review-card,
+    .ledger-comment {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--paper);
+    }
+
+    .review-meta,
+    .ledger-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px 14px;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .review-card h4,
+    .ledger-comment h4 { margin-bottom: 6px; font-size: 16px; }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 780;
+      white-space: nowrap;
+    }
+
+    .pill.good { color: var(--good); background: var(--good-soft); }
+    .pill.warn { color: var(--warn); background: var(--warn-soft); }
+    .pill.bad { color: var(--bad); background: var(--bad-soft); }
+    .pill.neutral { color: var(--muted); background: #e9edf4; }
+    .pill.accent { color: var(--accent); background: var(--accent-soft); }
+
+    .review-findings,
+    .finding-list { display: grid; gap: 10px; }
+
+    .mini-finding,
+    .finding-card {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--paper);
+    }
+
+    .mini-finding strong { display: block; margin-bottom: 3px; font-size: 13px; }
+    .mini-finding p { margin: 0; color: var(--muted); font-size: 12px; }
+
+    .finding-head {
+      display: flex;
+      gap: 10px;
+      align-items: start;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .finding-head h4 { margin: 0; }
+    .finding-head code { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+
+    .finding-card p { margin-bottom: 8px; font-size: 13px; }
+    .finding-card dl { display: grid; grid-template-columns: 88px 1fr; gap: 4px 10px; margin: 0; font-size: 12px; }
+    .finding-card dt { color: var(--muted); }
+    .finding-card dd { margin: 0; overflow-wrap: anywhere; }
+
+    .round-table,
+    .rule-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .round-table th,
+    .round-table td,
+    .rule-table th,
+    .rule-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .round-table th,
+    .rule-table th { color: var(--muted); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; }
+    .round-table tbody tr:last-child td,
+    .rule-table tbody tr:last-child td { border-bottom: none; }
+
+    .machine-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+
+    pre {
+      max-height: 590px;
+      margin: 0;
+      padding: 15px;
+      overflow: auto;
+      border-radius: 10px;
+      color: #e6edf7;
+      background: var(--code);
+      font-size: 11.5px;
+      line-height: 1.48;
+      white-space: pre;
+    }
+
+    details { margin-top: 12px; }
+    summary { cursor: pointer; color: var(--accent); font-weight: 700; font-size: 13px; }
+
+    .integrity-list { display: grid; gap: 7px; margin: 12px 0 0; padding: 0; list-style: none; }
+    .integrity-list li { padding: 8px 10px; border-radius: 8px; background: var(--bad-soft); color: var(--bad); font-size: 12px; }
+
+    .schema-note {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-left: 4px solid var(--warn);
+      border-radius: 0 10px 10px 0;
+      color: #6d4c00;
+      background: var(--warn-soft);
+      font-size: 13px;
+    }
+
+    .feedback {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .feedback li {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--soft);
+      font-size: 14px;
+    }
+
+    @media (max-width: 980px) {
+      .state-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .action-groups { grid-template-columns: 1fr; }
+      .artifact-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      .question { grid-template-columns: 1fr; }
+      .state-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .feedback { grid-template-columns: 1fr; }
+      .section, .question { padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div class="eyebrow">Prototype — throwaway</div>
+      <h1>A Ledger that remembers judgment without inviting endless review</h1>
+      <p>
+        This single-file demo exercises a proposed finding and Ledger model for a realistic
+        two-round pull request. Press the guided steps or attack the protocol in free play; the
+        full GitHub-derived state, readable comment, and normative JSON update after every act.
+      </p>
+    </header>
+
+    <section class="question">
+      <div>
+        <h2>The question</h2>
+        <p>
+          Can one mutable PR conversation comment make subjective review bounded, persistent,
+          readable, and mechanically recoverable — including exact retries, stale reviews,
+          forbidden re-raises, interrupted Judge writes, and two concurrent Judges?
+        </p>
+        <p>
+          The specimen uses <strong>acme/payments#418</strong>: round one finds three realistic
+          defects, the Judge blocks one, files one, and drops one; remediation changes the head;
+          round two must account for the blocker and may inspect only that delta.
+        </p>
+      </div>
+      <ul class="proposal">
+        <li><strong>Identity has two faces.</strong> RFC-8785 + SHA-256 over a stable identity object is authoritative; <code>F-001</code> is only its never-reused display label.</li>
+        <li><strong>Old blockers cannot disappear silently.</strong> A later review must resolve or continue each one exactly once; terminal findings cannot be raised again.</li>
+        <li><strong>A Judge update is all-or-nothing.</strong> Follow-up issues exist first, then one whole-Ledger write; exact retries converge.</li>
+        <li><strong>Last-write-wins is detected, not trusted.</strong> Revision hashes, GitHub edit history, and dismissal pointers turn divergent writers or deletion into escalation.</li>
+      </ul>
+    </section>
+
+    <section class="section" aria-labelledby="state-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="state-title">Current derived state</h2>
+          <p>This is what a fresh process can recover from GitHub. Nothing below relies on local memory.</p>
+        </div>
+        <button class="quiet-button" id="reset">Reset</button>
+      </div>
+      <div class="state-grid" id="state-grid"></div>
+      <div class="event" id="event" data-tone="neutral">Loading the fixture…</div>
+    </section>
+
+    <section class="section" aria-labelledby="walkthrough-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="walkthrough-title">Guided walkthroughs</h2>
+          <p>Each tab resets the fixture. Follow its buttons in order and watch the state and artifacts below.</p>
+        </div>
+      </div>
+      <div class="tabs" id="scenario-tabs" role="tablist"></div>
+      <div class="walkthrough" id="walkthrough"></div>
+    </section>
+
+    <section class="section" aria-labelledby="free-play-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="free-play-title">Free play</h2>
+          <p>Buttons stay available so illegal orderings are visible as rejected transitions.</p>
+        </div>
+      </div>
+      <div class="action-groups">
+        <div class="action-group">
+          <h3>Normal protocol</h3>
+          <p>Drive the intended two-round path.</p>
+          <div class="actions">
+            <button class="action-button" data-action="SUBMIT_ROUND_1">Reviewer: round 1</button>
+            <button class="action-button" data-action="JUDGE_ROUND_1">Judge: dispose round 1</button>
+            <button class="action-button" data-action="REMEDIATE">Remediate + green Audit</button>
+            <button class="action-button" data-action="SUBMIT_ROUND_2">Reviewer: round 2</button>
+            <button class="action-button" data-action="JUDGE_ROUND_2_DEFER">Judge: defer new point</button>
+            <button class="action-button" data-action="JUDGE_ROUND_2_BLOCK">Judge: block at cap</button>
+          </div>
+        </div>
+        <div class="action-group">
+          <h3>Retry and freshness</h3>
+          <p>Exercise idempotency and code-snapshot rules.</p>
+          <div class="actions">
+            <button class="action-button" data-action="DUPLICATE_REVIEW">Exact review retry</button>
+            <button class="action-button" data-action="DIVERGENT_REVIEW">Divergent review retry</button>
+            <button class="action-button" data-action="MOVE_HEAD">Move head unexpectedly</button>
+            <button class="action-button" data-action="SUBMIT_STALE_ROUND_1">Submit stale review</button>
+            <button class="action-button" data-action="SUBMIT_INVALID_ROUND_2">Forbidden round 2</button>
+          </div>
+        </div>
+        <div class="action-group">
+          <h3>Comment recovery</h3>
+          <p>Attack creation, mutation, and discovery.</p>
+          <div class="actions">
+            <button class="action-button" data-action="JUDGE_ROUND_1_TIMEOUT">Judge write times out</button>
+            <button class="action-button" data-action="RETRY_JUDGE_WRITE">Retry interrupted write</button>
+            <button class="action-button" data-action="DUPLICATE_LEDGER_CREATE">Duplicate Ledger create</button>
+            <button class="action-button danger" data-action="DIVERGENT_LEDGER_CREATE">Divergent Ledger create</button>
+            <button class="action-button danger" data-action="RACE_ROUND_2">Concurrent Judges</button>
+            <button class="action-button danger" data-action="TAMPER_LEDGER">Foreign edit</button>
+            <button class="action-button danger" data-action="DELETE_LEDGER">Delete canonical comment</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="artifacts-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="artifacts-title">The interface between Roles</h2>
+          <p>The native review is immutable input by identity; the Ledger comment is the mutable, validated projection of Judge decisions.</p>
+        </div>
+      </div>
+      <div class="artifact-grid">
+        <article class="artifact">
+          <h3>Latest native Reviewer artifact</h3>
+          <p>Its REST review ID, Principal ID, <code>commit_id</code>, event, and body digest are checked before prose is trusted.</p>
+          <div id="review-artifact"></div>
+        </article>
+        <article class="artifact">
+          <h3>Canonical Ledger comment</h3>
+          <p>Readable Markdown is generated from the JSON authority; the comment cannot be pinned, so dismissal pointers make its URL durable.</p>
+          <div id="ledger-artifact"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="machine-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="machine-title">Normative machine payload</h2>
+          <p>The proposed <code>my-team.ledger/v1</code> object is closed at every level and canonicalized before hashing.</p>
+        </div>
+      </div>
+      <div class="machine-tabs">
+        <button class="tab" id="show-ledger-json" aria-selected="true">Ledger JSON</button>
+        <button class="tab" id="show-review-json" aria-selected="false">Review JSON</button>
+      </div>
+      <pre id="machine-json"></pre>
+      <div class="schema-note">
+        The demo uses only strings, booleans, integers, arrays, objects, and <code>null</code>, so its
+        sorted-key canonicalizer matches the RFC 8785 result for these fixtures. Production should
+        use a conforming implementation rather than lift the tiny demo canonicalizer.
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="rules-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="rules-title">What the validator means by valid</h2>
+          <p>These are protocol claims the walkthrough is asking you to accept or reject.</p>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="rule-table">
+          <thead><tr><th>Concern</th><th>Proposed exact rule</th><th>Failure behavior</th></tr></thead>
+          <tbody>
+            <tr><td>Round identity</td><td><code>review_key</code> hashes PR, Contract digest, reviewed head, and delta base. The Ledger assigns the next contiguous human round number only when it accepts that key.</td><td>An exact duplicate is an alias; a different payload under the same key is an integrity conflict.</td></tr>
+            <tr><td>Finding identity</td><td><code>finding_id</code> hashes criterion/rule, path, stable symbol anchor, and failure mode. Evidence, wording, and line numbers may change without changing identity.</td><td>Duplicate IDs in one review are invalid. A terminal ID appearing again is a forbidden re-raise.</td></tr>
+            <tr><td>Evidence</td><td>Every point states actual behavior, expected behavior, consequence, one primary changed-line location, and at least one commit-pinned evidence URL.</td><td>Malformed submitted reviews escalate; validation is intended to happen before submission.</td></tr>
+            <tr><td>Delta-only</td><td>Round one covers the full base-to-head diff. Later rounds use the preceding accepted round head as <code>delta_base_sha</code>; every new or continuing point must touch that delta.</td><td>A stale review is ignored as a round; an unchanged-code finding is a protocol violation.</td></tr>
+            <tr><td>Disposition</td><td>Every new point receives exactly one immutable outcome: <code>blocking_now</code>, <code>follow_up</code>, or <code>dropped</code>. Follow-up URLs exist before the Ledger write.</td><td>A partial set is never written. A later outcome change is a fork, not an edit to history.</td></tr>
+            <tr><td>Prior blockers</td><td>The next accepted review names every blocker exactly once as <code>resolved</code> or <code>continuation</code>. A continuation keeps its original disposition and identity.</td><td>Missing, duplicated, or terminal references make the review invalid.</td></tr>
+            <tr><td>Judge retry</td><td>One full snapshot carries a contiguous revision, previous digest, and content-derived mutation ID. Identical retry is a setter.</td><td>Divergent siblings in GitHub edit history are detectable and escalate.</td></tr>
+            <tr><td>Discovery</td><td>Scan PR comments for exact sentinels, Ledger ID, and expected Judge Principal. Lowest comment ID wins only when every duplicate has the identical genesis. Each dismissed review points to the chosen URL/revision/digest.</td><td>A divergent genesis, missing anchored comment, foreign edit, broken render, or broken hash chain escalates.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="feedback-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="feedback-title">What to react to</h2>
+          <p>The useful feedback is where the model feels dishonest, too strict, or too hard to read.</p>
+        </div>
+      </div>
+      <ul class="feedback">
+        <li>Does requiring each later review to explicitly resolve or continue every blocker feel like the right guard against silent disappearance?</li>
+        <li>Is a content-derived machine ID plus a short <code>F-001</code> label clearer than asking the Reviewer to preserve a hand-authored ID?</li>
+        <li>Should stale reviews be ignored without consuming the review-round cap, leaving churn to the separate cost/no-progress policy?</li>
+        <li>Is escalation on a concurrent divergent edit preferable to attempting a three-way merge of two subjective Judge decisions?</li>
+        <li>Does dismissing every adjudicated <code>REQUEST_CHANGES</code> review, with a Ledger pointer as the dismissal message, feel like a sound anchor?</li>
+        <li>Can you understand why each sample was blocked, filed, dropped, or resolved from the readable Ledger without opening the JSON?</li>
+      </ul>
+    </section>
+  </main>
+
+  <script>
+    // -------------------------------------------------------------------------
+    // Portable logic module. It is deliberately independent of the DOM.
+    // -------------------------------------------------------------------------
+    const LedgerProtocol = (() => {
+      const PRINCIPALS = Object.freeze({
+        reviewer: 910042,
+        judge: 910043,
+        outsider: 771122,
+      });
+
+      const SHA = Object.freeze({
+        base: "40de83c34d54d79c3b6b493872132c3c69ed7191",
+        round1: "69fa7fb20c15dd43ba20be3c82ea1736a487c781",
+        round2: "d90c02cf9916386a47acb57e259cc83509c92fd4",
+        unexpected: "97e765811f760410f099993c678ae3fb4df318fb",
+      });
+
+      const clone = (value) => structuredClone(value);
+
+      function canonicalize(value) {
+        if (value === null || typeof value !== "object") return JSON.stringify(value);
+        if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
+        return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`).join(",")}}`;
+      }
+
+      async function sha256Text(text) {
+        const bytes = new TextEncoder().encode(text);
+        const digest = await crypto.subtle.digest("SHA-256", bytes);
+        return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+      }
+
+      const digestObject = (value) => sha256Text(canonicalize(value));
+
+      function identity(subject, path, anchor, failure) {
+        return { subject, path, anchor, failure };
+      }
+
+      async function finding(input) {
+        const findingId = await digestObject(input.identity);
+        return {
+          kind: input.kind || "new",
+          finding_id: findingId,
+          identity: input.identity,
+          defect_class: input.defectClass,
+          summary: input.summary,
+          actual: input.actual,
+          expected: input.expected,
+          consequence: input.consequence,
+          location: {
+            path: input.path,
+            start_line: input.line,
+            end_line: input.endLine || input.line,
+            side: "RIGHT",
+            commit_sha: input.sha,
+            in_delta: input.inDelta !== false,
+            url: `https://github.com/acme/payments/blob/${input.sha}/${input.path}#L${input.line}`,
+          },
+          evidence: input.evidence,
+        };
+      }
+
+      async function buildFixtures() {
+        const f1 = await finding({
+          identity: identity("contract:AC-002", "src/payments/retry.py", "charge_with_retry", "regenerates-idempotency-key-per-attempt"),
+          defectClass: "contract_violation",
+          summary: "A retry can submit the same logical payment under a new idempotency key.",
+          actual: "The key is generated inside the retry loop, so a lost success response makes attempt two look like a new charge.",
+          expected: "Every attempt for one logical payment must reuse the key fixed before the first gateway call.",
+          consequence: "A customer can be charged twice even though the retry path reports one successful payment.",
+          path: "src/payments/retry.py",
+          line: 84,
+          sha: SHA.round1,
+          evidence: [{
+            kind: "reproduction",
+            observation: "Gateway accepts attempt one, response is dropped, and attempt two records a second charge with another key.",
+            url: `https://github.com/acme/payments/actions/runs/7812/attempts/1?check_suite_focus=true#step:7:122`,
+          }],
+        });
+
+        const f2 = await finding({
+          identity: identity("behavior:late-cancellation", "src/payments/cancel.py", "cancel_payment", "accepted-charge-can-miss-refund"),
+          defectClass: "correctness",
+          summary: "Cancellation after gateway acceptance can leave the customer without an automatic refund.",
+          actual: "The cancellation branch returns when local state is pending and does not query the gateway acceptance result.",
+          expected: "A late accepted charge should enqueue a refund or surface a recoverable reconciliation item.",
+          consequence: "A cancelled order can retain a settled charge until manual reconciliation.",
+          path: "src/payments/cancel.py",
+          line: 61,
+          sha: SHA.round1,
+          evidence: [{
+            kind: "code_trace",
+            observation: "The pending branch returns before the only enqueue_refund call in this module.",
+            url: `https://github.com/acme/payments/blob/${SHA.round1}/src/payments/cancel.py#L61-L73`,
+          }],
+        });
+
+        const f3 = await finding({
+          identity: identity("rule:secrets-not-logged", "src/payments/logging.py", "gateway_debug_fields", "logs-gateway-token"),
+          defectClass: "security",
+          summary: "The debug payload appears to include the gateway token.",
+          actual: "The Reviewer interpreted the field named token as the live credential.",
+          expected: "No live credential may reach application logs.",
+          consequence: "Anyone with log access could replay a gateway credential if the observation were true.",
+          path: "src/payments/logging.py",
+          line: 33,
+          sha: SHA.round1,
+          evidence: [{
+            kind: "code_trace",
+            observation: "The payload includes event.token; the Reviewer did not follow its constructor to see that it is a fixed redaction marker.",
+            url: `https://github.com/acme/payments/blob/${SHA.round1}/src/payments/logging.py#L29-L35`,
+          }],
+        });
+
+        const f4 = await finding({
+          identity: identity("behavior:retry-jitter", "src/payments/retry.py", "retry_delay", "increments-attempt-before-jitter"),
+          defectClass: "correctness",
+          summary: "The remediation increases the final retry delay one exponent too far.",
+          actual: "attempt is incremented before retry_delay reads it, producing delays 2, 4, 8 rather than 1, 2, 4 seconds.",
+          expected: "The configured three-attempt schedule should remain 1, 2, 4 seconds.",
+          consequence: "A failing gateway holds a request four seconds longer than the existing retry policy permits.",
+          path: "src/payments/retry.py",
+          line: 91,
+          sha: SHA.round2,
+          evidence: [{
+            kind: "code_trace",
+            observation: "The increment at line 90 dominates the exponent read at line 91.",
+            url: `https://github.com/acme/payments/blob/${SHA.round2}/src/payments/retry.py#L88-L92`,
+          }],
+        });
+
+        const f5 = await finding({
+          identity: identity("rule:repository-style", "src/payments/models.py", "Payment", "prefers-slots"),
+          defectClass: "correctness",
+          summary: "Payment does not use slots.",
+          actual: "The unchanged class permits dynamic attributes.",
+          expected: "The Reviewer prefers slots on data carriers.",
+          consequence: "No demonstrated failure; this is a style preference on unchanged code.",
+          path: "src/payments/models.py",
+          line: 17,
+          sha: SHA.round2,
+          inDelta: false,
+          evidence: [{
+            kind: "code_trace",
+            observation: "Payment has no __slots__ declaration.",
+            url: `https://github.com/acme/payments/blob/${SHA.round2}/src/payments/models.py#L14-L23`,
+          }],
+        });
+
+        const resolutionF1 = {
+          finding_id: f1.finding_id,
+          status: "resolved",
+          explanation: "The idempotency key is now created before the loop and the lost-response case reuses it.",
+          location: {
+            path: "src/payments/retry.py",
+            start_line: 79,
+            end_line: 91,
+            side: "RIGHT",
+            commit_sha: SHA.round2,
+            in_delta: true,
+            url: `https://github.com/acme/payments/blob/${SHA.round2}/src/payments/retry.py#L79-L91`,
+          },
+          evidence: [{
+            kind: "passing_test",
+            observation: "test_lost_success_response_reuses_idempotency_key passes at the reviewed head.",
+            url: "https://github.com/acme/payments/actions/runs/7844/job/20119#step:6:44",
+          }],
+        };
+
+        return { f1, f2, f3, f4, f5, resolutionF1 };
+      }
+
+      function reviewPayload(state, headSha, deltaBaseSha, findings, resolvedFindings) {
+        return {
+          schema: "my-team.review/v1",
+          review_key: null,
+          contract: clone(state.pr.contract),
+          pull_request: state.pr.identity,
+          head_sha: headSha,
+          delta_base_sha: deltaBaseSha,
+          verdict: findings.length ? "request_changes" : "approve",
+          resolved_findings: clone(resolvedFindings),
+          findings: clone(findings),
+        };
+      }
+
+      async function finishReviewPayload(payload) {
+        const keyInput = {
+          pull_request: payload.pull_request,
+          contract_digest: payload.contract.digest,
+          head_sha: payload.head_sha,
+          delta_base_sha: payload.delta_base_sha,
+        };
+        payload.review_key = await digestObject(keyInput);
+        return payload;
+      }
+
+      async function makeReview(state, options) {
+        const payload = await finishReviewPayload(reviewPayload(
+          state,
+          options.headSha,
+          options.deltaBaseSha,
+          options.findings,
+          options.resolvedFindings || [],
+        ));
+        return {
+          id: options.id,
+          url: `https://github.com/acme/payments/pull/418#pullrequestreview-${options.id}`,
+          reviewer_principal_id: PRINCIPALS.reviewer,
+          submitted_at: options.submittedAt,
+          commit_id: options.headSha,
+          native_state: payload.verdict === "approve" ? "APPROVED" : "CHANGES_REQUESTED",
+          body_digest: await digestObject(payload),
+          payload,
+          protocol_status: "unvalidated",
+          validation_errors: [],
+          aliases: [],
+          dismissed: false,
+          dismissal: null,
+        };
+      }
+
+      async function initialState() {
+        const fixtures = await buildFixtures();
+        return {
+          pr: {
+            identity: "acme/payments#418",
+            url: "https://github.com/acme/payments/pull/418",
+            base_sha: SHA.base,
+            head_sha: SHA.round1,
+            audit_sha: SHA.round1,
+            audit_conclusion: "success",
+            contract: {
+              url: "https://github.com/acme/payments/issues/417#issuecomment-9001",
+              revision: 2,
+              digest: "sha256:5f8f4325f1b4d0c7bc0cc255381afe1d8ac573f6c319d2ac11efc40da746a5b2",
+            },
+          },
+          policy: {
+            review_round_limit: 2,
+            delta_only_from_round: 2,
+            defect_classes: ["correctness", "contract_violation", "security", "data_loss"],
+          },
+          fixtures,
+          reviews: [],
+          comments: [],
+          edit_history: [],
+          ledger: null,
+          ledger_digest: null,
+          follow_ups: [],
+          next_comment_id: 99001,
+          next_review_id: 88001,
+          next_finding_number: 1,
+          escalation: null,
+          interrupted_write: null,
+          last_event: {
+            tone: "neutral",
+            text: "Fixture reset. The current head has a green Audit and is waiting for its first Reviewer sample.",
+          },
+        };
+      }
+
+      function effectiveFindings(state) {
+        return state.ledger ? state.ledger.findings : [];
+      }
+
+      function openBlockers(state) {
+        return effectiveFindings(state).filter((item) => item.status === "blocking");
+      }
+
+      function ledgeredReviewKeys(state) {
+        return new Set(state.ledger ? state.ledger.rounds.map((round) => round.review_key) : []);
+      }
+
+      function latestCurrentReview(state) {
+        return [...state.reviews]
+          .reverse()
+          .find((review) => review.protocol_status === "valid" && review.commit_id === state.pr.head_sha) || null;
+      }
+
+      function validateReview(state, review) {
+        const errors = [];
+        const payload = review.payload;
+        const lastRound = state.ledger?.rounds.at(-1) || null;
+        const expectedDeltaBase = lastRound ? lastRound.head_sha : state.pr.base_sha;
+        const known = new Map(effectiveFindings(state).map((item) => [item.finding_id, item]));
+        const seen = new Set();
+
+        if (review.reviewer_principal_id !== PRINCIPALS.reviewer) errors.push("WRONG_REVIEWER_PRINCIPAL");
+        if (payload.schema !== "my-team.review/v1") errors.push("UNKNOWN_REVIEW_SCHEMA");
+        if (payload.pull_request !== state.pr.identity) errors.push("WRONG_PULL_REQUEST");
+        if (payload.contract.digest !== state.pr.contract.digest) errors.push("WRONG_CONTRACT");
+        if (payload.head_sha !== review.commit_id) errors.push("NATIVE_HEAD_DISAGREES");
+        if (payload.delta_base_sha !== expectedDeltaBase) errors.push("WRONG_DELTA_BASE");
+        if ((payload.findings.length > 0) !== (review.native_state === "CHANGES_REQUESTED")) errors.push("NATIVE_VERDICT_DISAGREES");
+
+        const allOccurrences = [...payload.findings, ...payload.resolved_findings];
+        for (const occurrence of allOccurrences) {
+          if (seen.has(occurrence.finding_id)) errors.push(`DUPLICATE_FINDING:${shortId(occurrence.finding_id)}`);
+          seen.add(occurrence.finding_id);
+        }
+
+        for (const item of payload.findings) {
+          if (!state.policy.defect_classes.includes(item.defect_class)) errors.push(`FORBIDDEN_DEFECT_CLASS:${shortId(item.finding_id)}`);
+          if (!item.evidence?.length) errors.push(`MISSING_EVIDENCE:${shortId(item.finding_id)}`);
+          if (!item.location?.url || item.location.commit_sha !== payload.head_sha) errors.push(`BAD_LOCATION:${shortId(item.finding_id)}`);
+          if (lastRound && !item.location.in_delta) errors.push(`OUTSIDE_DELTA:${shortId(item.finding_id)}`);
+
+          const prior = known.get(item.finding_id);
+          if (item.kind === "new" && prior) errors.push(`FORBIDDEN_RE_RAISE:${prior.label}`);
+          if (item.kind === "continuation" && (!prior || prior.status !== "blocking")) {
+            errors.push(`INVALID_CONTINUATION:${prior?.label || shortId(item.finding_id)}`);
+          }
+        }
+
+        for (const resolution of payload.resolved_findings) {
+          const prior = known.get(resolution.finding_id);
+          if (!prior || prior.status !== "blocking") errors.push(`INVALID_RESOLUTION:${prior?.label || shortId(resolution.finding_id)}`);
+          if (!resolution.evidence?.length || !resolution.location?.in_delta) errors.push(`UNPROVEN_RESOLUTION:${prior?.label || shortId(resolution.finding_id)}`);
+        }
+
+        if (lastRound) {
+          for (const blocker of openBlockers(state)) {
+            const count = allOccurrences.filter((item) => item.finding_id === blocker.finding_id).length;
+            if (count === 0) errors.push(`SILENT_BLOCKER:${blocker.label}`);
+            if (count > 1) errors.push(`MULTIPLE_ACCOUNTS:${blocker.label}`);
+          }
+        }
+
+        return errors;
+      }
+
+      function shortId(id) {
+        return id ? `F-${id.slice(-8).toUpperCase()}` : "unknown";
+      }
+
+      function displayId(number) {
+        return `F-${String(number).padStart(3, "0")}`;
+      }
+
+      function lastAcceptedHead(state) {
+        return state.ledger?.rounds.at(-1)?.head_sha || state.pr.base_sha;
+      }
+
+      async function submitReview(state, review) {
+        const next = clone(state);
+        const sameKey = next.reviews.filter((existing) => existing.payload.review_key === review.payload.review_key);
+        if (sameKey.length) {
+          const canonical = sameKey[0];
+          if (canonical.body_digest === review.body_digest) {
+            canonical.aliases.push(review.id);
+            review.protocol_status = "alias";
+            next.reviews.push(review);
+            next.last_event = {
+              tone: "good",
+              text: `Review ${review.id} is an exact retry of ${canonical.id}; the earliest native ID remains canonical and the sample counts once.`,
+            };
+            return next;
+          }
+          review.protocol_status = "conflict";
+          review.validation_errors = ["DIVERGENT_REVIEW_RETRY"];
+          next.reviews.push(review);
+          next.escalation = "Two Reviewer artifacts claim the same code delta with different payload digests.";
+          next.last_event = { tone: "bad", text: "Divergent review retry detected. Recovery escalates instead of choosing whichever native review arrived last." };
+          return next;
+        }
+
+        if (review.commit_id !== next.pr.head_sha) {
+          review.protocol_status = "stale";
+          review.validation_errors = ["STALE_HEAD"];
+          next.reviews.push(review);
+          next.last_event = {
+            tone: "warn",
+            text: "The native review is pinned to an old head. It stays visible as evidence but is not assigned a round and does not consume the review cap.",
+          };
+          return next;
+        }
+
+        const errors = validateReview(next, review);
+        review.validation_errors = errors;
+        review.protocol_status = errors.length ? "invalid" : "valid";
+        next.reviews.push(review);
+        if (errors.length) {
+          next.escalation = `Submitted Reviewer artifact violated the closed review protocol: ${errors.join(", ")}.`;
+          next.last_event = { tone: "bad", text: `Review rejected: ${errors.join(" · ")}. A submitted malformed artifact is not sampled again.` };
+        } else {
+          next.last_event = {
+            tone: "good",
+            text: `Accepted native review ${review.id} at ${review.commit_id.slice(0, 8)}. Its findings now await one complete Judge disposition transaction.`,
+          };
+        }
+        return next;
+      }
+
+      function dispositionFor(outcome, rationale, extra = {}) {
+        return {
+          outcome,
+          rationale,
+          required_change: outcome === "blocking_now" ? extra.requiredChange : null,
+          follow_up: outcome === "follow_up" ? extra.followUp : null,
+        };
+      }
+
+      function roundOneDispositions(state) {
+        const { f1, f2, f3 } = state.fixtures;
+        return new Map([
+          [f1.finding_id, dispositionFor(
+            "blocking_now",
+            "The reproduction demonstrates a contract outcome failure under AC-002; the duplicate-charge risk must be removed before merge.",
+            { requiredChange: "Create the idempotency key outside the retry loop and spend one test-budget case on the lost-success-response oracle." },
+          )],
+          [f2.finding_id, dispositionFor(
+            "follow_up",
+            "The defect is credible, but late cancellation is outside this Contract and touching reconciliation would widen the frozen Scope Paths.",
+            { followUp: { issue_number: 777, url: "https://github.com/acme/payments/issues/777" } },
+          )],
+          [f3.finding_id, dispositionFor(
+            "dropped",
+            "The cited value is constructed as the literal redaction marker '[REDACTED]'; the evidence does not establish credential exposure.",
+          )],
+        ]);
+      }
+
+      function roundTwoDispositions(state, block) {
+        const { f4 } = state.fixtures;
+        return new Map([[
+          f4.finding_id,
+          block
+            ? dispositionFor(
+              "blocking_now",
+              "The changed retry schedule is a demonstrated correctness regression in the remediation delta.",
+              { requiredChange: "Restore the documented 1, 2, 4 second schedule and prove it with the existing timing case." },
+            )
+            : dispositionFor(
+              "follow_up",
+              "The delay shift is credible but does not violate AC-002's exactly-once outcome; defer tuning instead of opening a third subjective round.",
+              { followUp: { issue_number: 778, url: "https://github.com/acme/payments/issues/778" } },
+            ),
+        ]]);
+      }
+
+      async function makeMutationId(kind, review, dispositions) {
+        return digestObject({
+          kind,
+          review_key: review.payload.review_key,
+          dispositions: [...dispositions.entries()].map(([findingId, value]) => ({ finding_id: findingId, ...value })),
+        });
+      }
+
+      async function buildLedgerSnapshot(state, review, dispositions) {
+        const prior = state.ledger ? clone(state.ledger) : null;
+        const previousDigest = state.ledger_digest;
+        const roundNumber = (prior?.rounds.length || 0) + 1;
+        const ledger = prior || {
+          schema: "my-team.ledger/v1",
+          ledger_id: state.pr.identity,
+          contract: clone(state.pr.contract),
+          policy: clone(state.policy),
+          revision: 0,
+          previous_digest: null,
+          mutation_id: null,
+          rounds: [],
+          findings: [],
+        };
+
+        ledger.revision += 1;
+        ledger.previous_digest = previousDigest;
+        ledger.mutation_id = await makeMutationId("judge_disposition", review, dispositions);
+
+        const byId = new Map(ledger.findings.map((item) => [item.finding_id, item]));
+        for (const resolution of review.payload.resolved_findings) {
+          const item = byId.get(resolution.finding_id);
+          item.status = "resolved";
+          item.resolution = {
+            round: roundNumber,
+            review_id: review.id,
+            head_sha: review.commit_id,
+            explanation: resolution.explanation,
+            location: clone(resolution.location),
+            evidence: clone(resolution.evidence),
+          };
+        }
+
+        const roundLabels = [];
+        for (const occurrence of review.payload.findings) {
+          if (occurrence.kind === "continuation") {
+            const existing = byId.get(occurrence.finding_id);
+            existing.occurrences.push({
+              round: roundNumber,
+              review_id: review.id,
+              head_sha: review.commit_id,
+              location: clone(occurrence.location),
+              evidence: clone(occurrence.evidence),
+            });
+            roundLabels.push(existing.label);
+            continue;
+          }
+
+          const disposition = dispositions.get(occurrence.finding_id);
+          const label = displayId(state.next_finding_number + roundLabels.length);
+          const status = disposition.outcome === "blocking_now"
+            ? "blocking"
+            : disposition.outcome === "follow_up" ? "follow_up" : "dropped";
+          ledger.findings.push({
+            finding_id: occurrence.finding_id,
+            label,
+            identity: clone(occurrence.identity),
+            defect_class: occurrence.defect_class,
+            summary: occurrence.summary,
+            actual: occurrence.actual,
+            expected: occurrence.expected,
+            consequence: occurrence.consequence,
+            introduced_in_round: roundNumber,
+            occurrences: [{
+              round: roundNumber,
+              review_id: review.id,
+              head_sha: review.commit_id,
+              location: clone(occurrence.location),
+              evidence: clone(occurrence.evidence),
+            }],
+            disposition: {
+              round: roundNumber,
+              judge_principal_id: PRINCIPALS.judge,
+              ...clone(disposition),
+            },
+            status,
+            resolution: null,
+          });
+          roundLabels.push(label);
+        }
+
+        ledger.rounds.push({
+          number: roundNumber,
+          review_key: review.payload.review_key,
+          review_id: review.id,
+          review_url: review.url,
+          review_body_digest: review.body_digest,
+          reviewer_principal_id: review.reviewer_principal_id,
+          head_sha: review.commit_id,
+          delta_base_sha: review.payload.delta_base_sha,
+          native_verdict: review.native_state,
+          finding_labels: roundLabels,
+          resolved_finding_labels: review.payload.resolved_findings.map((resolution) => byId.get(resolution.finding_id)?.label).filter(Boolean),
+        });
+
+        return { ledger, digest: await digestObject(ledger) };
+      }
+
+      function ensureFollowUps(state, dispositions) {
+        for (const [findingId, disposition] of dispositions.entries()) {
+          if (disposition.outcome !== "follow_up") continue;
+          if (state.follow_ups.some((item) => item.finding_id === findingId)) continue;
+          state.follow_ups.push({ finding_id: findingId, ...clone(disposition.follow_up) });
+        }
+      }
+
+      function commentUrl(id) {
+        return `https://github.com/acme/payments/pull/418#issuecomment-${id}`;
+      }
+
+      function appendLedgerVersion(state, snapshot, options = {}) {
+        if (!state.comments.length) {
+          const id = state.next_comment_id++;
+          state.comments.push({
+            id,
+            url: commentUrl(id),
+            author_principal_id: PRINCIPALS.judge,
+            genesis_digest: snapshot.digest,
+            current_digest: snapshot.digest,
+            current_revision: snapshot.ledger.revision,
+            marker_valid: true,
+            edited: false,
+          });
+        } else {
+          const canonical = [...state.comments].sort((a, b) => a.id - b.id)[0];
+          canonical.current_digest = snapshot.digest;
+          canonical.current_revision = snapshot.ledger.revision;
+          canonical.edited = true;
+        }
+        state.edit_history.push({
+          revision: snapshot.ledger.revision,
+          previous_digest: snapshot.ledger.previous_digest,
+          digest: snapshot.digest,
+          mutation_id: snapshot.ledger.mutation_id,
+          editor_principal_id: options.editorId || PRINCIPALS.judge,
+          marker_valid: options.markerValid !== false,
+          ledger: clone(snapshot.ledger),
+        });
+        state.ledger = clone(snapshot.ledger);
+        state.ledger_digest = snapshot.digest;
+      }
+
+      function addDismissalAnchor(state, review) {
+        const canonical = [...state.comments].sort((a, b) => a.id - b.id)[0];
+        review.dismissed = true;
+        review.dismissal = {
+          dismissed_by_principal_id: PRINCIPALS.judge,
+          ledger_url: canonical.url,
+          ledger_revision: state.ledger.revision,
+          ledger_digest: state.ledger_digest,
+          message_schema: "my-team.ledger-ref/v1",
+        };
+      }
+
+      async function judgeLatest(state, dispositions, options = {}) {
+        const next = clone(state);
+        if (next.escalation && !options.allowEscalated) return reject(next, "The pipeline is escalated; no Judge write is legal.");
+        const review = latestCurrentReview(next);
+        if (!review) return reject(next, "There is no valid current-head review to judge.");
+        if (ledgeredReviewKeys(next).has(review.payload.review_key)) {
+          if (next.interrupted_write) {
+            addDismissalAnchor(next, review);
+            next.interrupted_write = null;
+            next.last_event = { tone: "good", text: "Recovery found the exact mutation already present, wrote nothing again, and completed the missing review-dismissal pointer." };
+            return next;
+          }
+          return reject(next, "That review already has a complete Ledger transaction.");
+        }
+        if (review.native_state !== "CHANGES_REQUESTED") return reject(next, "An APPROVED review has no new findings for the Judge to dispose.");
+        if (dispositions.size !== review.payload.findings.filter((item) => item.kind === "new").length) {
+          return reject(next, "The Judge must decide every new finding in one complete write.");
+        }
+
+        ensureFollowUps(next, dispositions);
+        const snapshot = await buildLedgerSnapshot(next, review, dispositions);
+        appendLedgerVersion(next, snapshot);
+        next.next_finding_number = next.ledger.findings.length + 1;
+
+        if (options.timeout) {
+          next.interrupted_write = { mutation_id: snapshot.ledger.mutation_id, review_key: review.payload.review_key };
+          next.last_event = {
+            tone: "warn",
+            text: "GitHub accepted the full Ledger write, but the client timed out before seeing the response. The native review is not dismissed yet.",
+          };
+          return next;
+        }
+
+        addDismissalAnchor(next, review);
+        const blockers = openBlockers(next);
+        if (blockers.length && next.ledger.rounds.length >= next.policy.review_round_limit) {
+          next.escalation = `Review-round cap ${next.policy.review_round_limit} is exhausted with ${blockers.length} blocking finding(s).`;
+          next.last_event = { tone: "bad", text: "The second accepted sample still leaves a blocker. The Judge escalates; a third subjective round is forbidden." };
+        } else {
+          next.last_event = {
+            tone: "good",
+            text: blockers.length
+              ? "All three findings received one disposition. The Reviewer verdict is dismissed with a Ledger pointer; the one blocker moves to remediation."
+              : "Round two resolved the old blocker and filed the new delta point. With no blocker left, the mechanical Integrator may proceed.",
+          };
+        }
+        return next;
+      }
+
+      function reject(state, text) {
+        state.last_event = { tone: "warn", text: `Rejected transition: ${text}` };
+        return state;
+      }
+
+      function historyErrors(state) {
+        const errors = [];
+        if (!state.edit_history.length) return errors;
+        let prior = null;
+        for (const edit of state.edit_history) {
+          if (edit.editor_principal_id !== PRINCIPALS.judge) errors.push(`FOREIGN_EDITOR:${edit.editor_principal_id}`);
+          if (!edit.marker_valid) errors.push(`BROKEN_SENTINEL:r${edit.revision}`);
+          if (!prior) {
+            if (edit.revision !== 1 || edit.previous_digest !== null) errors.push("BAD_GENESIS");
+          } else if (edit.digest === prior.digest) {
+            // Exact setter retry: no semantic edit.
+          } else if (edit.revision !== prior.revision + 1 || edit.previous_digest !== prior.digest) {
+            errors.push(`EDIT_CHAIN_FORK:r${prior.revision}->r${edit.revision}`);
+          }
+          prior = edit;
+        }
+        return [...new Set(errors)];
+      }
+
+      function discovery(state) {
+        const errors = historyErrors(state);
+        const candidates = [...state.comments].sort((a, b) => a.id - b.id);
+        if (!candidates.length) {
+          const anchored = state.reviews.some((review) => review.dismissal?.ledger_url);
+          if (anchored) errors.push("ANCHORED_LEDGER_MISSING");
+          return { status: errors.length ? "invalid" : "absent", canonical: null, aliases: [], errors };
+        }
+
+        const canonical = candidates[0];
+        if (canonical.author_principal_id !== PRINCIPALS.judge) errors.push("WRONG_LEDGER_AUTHOR");
+        if (!canonical.marker_valid) errors.push("BROKEN_LEDGER_MARKER");
+        for (const candidate of candidates.slice(1)) {
+          if (candidate.author_principal_id !== PRINCIPALS.judge) errors.push(`WRONG_ALIAS_AUTHOR:${candidate.id}`);
+          if (candidate.genesis_digest !== canonical.genesis_digest) errors.push(`DIVERGENT_GENESIS:${candidate.id}`);
+          if (candidate.edited) errors.push(`EDITED_ALIAS:${candidate.id}`);
+        }
+        for (const review of state.reviews.filter((item) => item.dismissal)) {
+          if (review.dismissal.ledger_url !== canonical.url) errors.push(`ANCHOR_WRONG_COMMENT:${review.id}`);
+          const anchoredEdit = state.edit_history.find((edit) => edit.digest === review.dismissal.ledger_digest && edit.revision === review.dismissal.ledger_revision);
+          if (!anchoredEdit) errors.push(`ANCHOR_UNKNOWN_REVISION:${review.id}`);
+        }
+        return {
+          status: errors.length ? "invalid" : "canonical",
+          canonical,
+          aliases: candidates.slice(1),
+          errors: [...new Set(errors)],
+        };
+      }
+
+      function derive(state) {
+        const found = discovery(state);
+        if (state.escalation || found.errors.length) return "ESCALATED";
+        if (state.interrupted_write) return "ANCHORING_LEDGER";
+        const review = latestCurrentReview(state);
+        const ledgered = ledgeredReviewKeys(state);
+        if (review && !ledgered.has(review.payload.review_key)) {
+          return review.native_state === "CHANGES_REQUESTED" ? "JUDGING" : "INTEGRATING";
+        }
+        const blockers = openBlockers(state);
+        if (blockers.length) {
+          if ((state.ledger?.rounds.length || 0) >= state.policy.review_round_limit) return "ESCALATED";
+          const lastHead = state.ledger.rounds.at(-1).head_sha;
+          return state.pr.head_sha === lastHead ? "REMEDIATING" : "REVIEWING";
+        }
+        if (state.ledger?.rounds.length) return "INTEGRATING";
+        return "REVIEWING";
+      }
+
+      function latestReview(state) {
+        return state.reviews.at(-1) || null;
+      }
+
+      async function transition(state, action) {
+        if (action === "RESET") return initialState();
+        let next = clone(state);
+
+        switch (action) {
+          case "SUBMIT_ROUND_1": {
+            const review = await makeReview(next, {
+              id: next.next_review_id++,
+              headSha: SHA.round1,
+              deltaBaseSha: SHA.base,
+              findings: [next.fixtures.f1, next.fixtures.f2, next.fixtures.f3],
+              submittedAt: "2026-09-02T18:12:00Z",
+            });
+            return submitReview(next, review);
+          }
+          case "JUDGE_ROUND_1":
+            return judgeLatest(next, roundOneDispositions(next));
+          case "JUDGE_ROUND_1_TIMEOUT":
+            return judgeLatest(next, roundOneDispositions(next), { timeout: true });
+          case "RETRY_JUDGE_WRITE":
+            return judgeLatest(next, roundOneDispositions(next));
+          case "REMEDIATE": {
+            if (derive(next) !== "REMEDIATING") return reject(next, "Remediation requires a live blocking finding below the round cap.");
+            next.pr.head_sha = SHA.round2;
+            next.pr.audit_sha = SHA.round2;
+            next.pr.audit_conclusion = "success";
+            next.last_event = {
+              tone: "good",
+              text: `Remediator pushed ${SHA.round2.slice(0, 8)} and the Audit passed. The next Reviewer is constrained to ${SHA.round1.slice(0, 8)}…${SHA.round2.slice(0, 8)}.`,
+            };
+            return next;
+          }
+          case "SUBMIT_ROUND_2": {
+            if (!next.ledger || next.pr.head_sha !== SHA.round2) return reject(next, "Round two requires the adjudicated first round and its remediated head.");
+            const review = await makeReview(next, {
+              id: next.next_review_id++,
+              headSha: SHA.round2,
+              deltaBaseSha: lastAcceptedHead(next),
+              findings: [next.fixtures.f4],
+              resolvedFindings: [next.fixtures.resolutionF1],
+              submittedAt: "2026-09-02T18:41:00Z",
+            });
+            return submitReview(next, review);
+          }
+          case "JUDGE_ROUND_2_DEFER":
+            return judgeLatest(next, roundTwoDispositions(next, false));
+          case "JUDGE_ROUND_2_BLOCK":
+            return judgeLatest(next, roundTwoDispositions(next, true));
+          case "SUBMIT_INVALID_ROUND_2": {
+            if (!next.ledger || next.pr.head_sha !== SHA.round2) return reject(next, "The forbidden re-raise fixture starts after round-one remediation.");
+            const terminalCopy = clone(next.fixtures.f2);
+            terminalCopy.kind = "new";
+            const duplicateCopy = clone(terminalCopy);
+            const review = await makeReview(next, {
+              id: next.next_review_id++,
+              headSha: SHA.round2,
+              deltaBaseSha: lastAcceptedHead(next),
+              findings: [terminalCopy, duplicateCopy, next.fixtures.f5],
+              resolvedFindings: [],
+              submittedAt: "2026-09-02T18:39:00Z",
+            });
+            return submitReview(next, review);
+          }
+          case "DUPLICATE_REVIEW": {
+            const source = [...next.reviews].reverse().find((review) => ["valid", "stale"].includes(review.protocol_status));
+            if (!source) return reject(next, "Submit a review before retrying its creation.");
+            const duplicate = clone(source);
+            duplicate.id = next.next_review_id++;
+            duplicate.url = `https://github.com/acme/payments/pull/418#pullrequestreview-${duplicate.id}`;
+            duplicate.aliases = [];
+            duplicate.protocol_status = "unvalidated";
+            return submitReview(next, duplicate);
+          }
+          case "DIVERGENT_REVIEW": {
+            const source = [...next.reviews].reverse().find((review) => review.protocol_status === "valid");
+            if (!source) return reject(next, "Submit a valid review before creating a divergent retry.");
+            const divergent = clone(source);
+            divergent.id = next.next_review_id++;
+            divergent.url = `https://github.com/acme/payments/pull/418#pullrequestreview-${divergent.id}`;
+            divergent.payload.findings[0].summary += " (independently regenerated wording)";
+            divergent.body_digest = await digestObject(divergent.payload);
+            divergent.protocol_status = "unvalidated";
+            divergent.aliases = [];
+            return submitReview(next, divergent);
+          }
+          case "MOVE_HEAD":
+            next.pr.head_sha = SHA.unexpected;
+            next.pr.audit_sha = SHA.unexpected;
+            next.pr.audit_conclusion = "success";
+            next.last_event = { tone: "warn", text: `An external push moved the coherent head to ${SHA.unexpected.slice(0, 8)}. Older native reviews remain evidence but cannot become a Ledger round.` };
+            return next;
+          case "SUBMIT_STALE_ROUND_1": {
+            const review = await makeReview(next, {
+              id: next.next_review_id++,
+              headSha: SHA.round1,
+              deltaBaseSha: SHA.base,
+              findings: [next.fixtures.f1, next.fixtures.f2, next.fixtures.f3],
+              submittedAt: "2026-09-02T18:12:00Z",
+            });
+            return submitReview(next, review);
+          }
+          case "DUPLICATE_LEDGER_CREATE": {
+            if (!next.comments.length) return reject(next, "Create the Ledger through a Judge disposition before simulating an ambiguous create retry.");
+            const canonical = [...next.comments].sort((a, b) => a.id - b.id)[0];
+            const id = next.next_comment_id++;
+            next.comments.push({
+              id,
+              url: commentUrl(id),
+              author_principal_id: PRINCIPALS.judge,
+              genesis_digest: canonical.genesis_digest,
+              current_digest: canonical.genesis_digest,
+              current_revision: 1,
+              marker_valid: true,
+              edited: false,
+            });
+            next.last_event = { tone: "good", text: `Comment ${id} is a byte-identical genesis retry. Lowest comment ID remains canonical; the extra comment is a harmless, visible alias.` };
+            return next;
+          }
+          case "DIVERGENT_LEDGER_CREATE": {
+            if (!next.comments.length) return reject(next, "Create the Ledger before simulating a divergent duplicate.");
+            const id = next.next_comment_id++;
+            next.comments.push({
+              id,
+              url: commentUrl(id),
+              author_principal_id: PRINCIPALS.judge,
+              genesis_digest: await digestObject({ divergent: true, id }),
+              current_digest: await digestObject({ divergent: true, id }),
+              current_revision: 1,
+              marker_valid: true,
+              edited: false,
+            });
+            next.escalation = "Multiple Judge-authored Ledger candidates have different genesis digests.";
+            next.last_event = { tone: "bad", text: "A second Ledger candidate has different content. Discovery refuses to guess which subjective decision won." };
+            return next;
+          }
+          case "RACE_ROUND_2": {
+            const review = latestCurrentReview(next);
+            if (!review || !next.ledger || ledgeredReviewKeys(next).has(review.payload.review_key)) {
+              return reject(next, "The race fixture needs an unjudged round-two review above Ledger revision 1.");
+            }
+            const base = clone(next);
+            const aDispositions = roundTwoDispositions(base, false);
+            const bDispositions = roundTwoDispositions(base, true);
+            ensureFollowUps(next, aDispositions);
+            const a = await buildLedgerSnapshot(base, review, aDispositions);
+            const b = await buildLedgerSnapshot(base, review, bDispositions);
+            appendLedgerVersion(next, a);
+            appendLedgerVersion(next, b);
+            next.escalation = "Two Judge updates forked from the same Ledger digest.";
+            next.last_event = { tone: "bad", text: "Judge A deferred the delta point; Judge B blocked it from the same parent revision. GitHub kept B last, but edit history proves the fork, so recovery escalates." };
+            return next;
+          }
+          case "TAMPER_LEDGER": {
+            if (!next.ledger) return reject(next, "There is no Ledger comment to edit.");
+            const tamperedLedger = clone(next.ledger);
+            tamperedLedger.findings[0].summary = "Everything is fine now.";
+            const snapshot = { ledger: tamperedLedger, digest: await digestObject(tamperedLedger) };
+            appendLedgerVersion(next, snapshot, { editorId: PRINCIPALS.outsider });
+            next.escalation = "Ledger edit history contains a non-Ledger Principal and a broken revision chain.";
+            next.last_event = { tone: "bad", text: "A write-capable outsider edited the readable comment. Author alone is insufficient: edit attribution and the hash chain expose the mutation." };
+            return next;
+          }
+          case "DELETE_LEDGER": {
+            const found = discovery(next);
+            if (!found.canonical) return reject(next, "There is no canonical Ledger comment to delete.");
+            next.comments = next.comments.filter((comment) => comment.id !== found.canonical.id);
+            next.escalation = "A dismissed review points to a Ledger comment that no longer exists.";
+            next.last_event = { tone: "bad", text: "The canonical Ledger comment disappeared. Its native review-dismissal pointer prevents recovery from silently creating a replacement history." };
+            return next;
+          }
+          default:
+            return reject(next, `Unknown action ${action}.`);
+        }
+      }
+
+      return {
+        PRINCIPALS,
+        SHA,
+        canonicalize,
+        digestObject,
+        initialState,
+        transition,
+        derive,
+        discovery,
+        historyErrors,
+        latestReview,
+        latestCurrentReview,
+        openBlockers,
+        shortId,
+      };
+    })();
+
+    // -------------------------------------------------------------------------
+    // Thin page shell over the portable module.
+    // -------------------------------------------------------------------------
+    const Demo = (() => {
+      const scenarios = [
+        {
+          id: "converge",
+          title: "Two-round convergence",
+          description: "Watch three round-one points get distinct outcomes, then require round two to account for the old blocker before a new delta point is filed. No Reviewer gets asked whether it is finally satisfied forever.",
+          steps: [
+            ["Submit round 1 review", "SUBMIT_ROUND_1"],
+            ["Dispose all three findings", "JUDGE_ROUND_1"],
+            ["Remediate + Audit", "REMEDIATE"],
+            ["Submit delta-only round 2", "SUBMIT_ROUND_2"],
+            ["File new point; integrate", "JUDGE_ROUND_2_DEFER"],
+          ],
+        },
+        {
+          id: "cap",
+          title: "Blocker at the cap",
+          description: "Take the same second sample, but make its new delta defect blocking now. The Ledger keeps the decision and the loop escalates rather than buying a third subjective sample.",
+          steps: [
+            ["Submit round 1 review", "SUBMIT_ROUND_1"],
+            ["Dispose all three findings", "JUDGE_ROUND_1"],
+            ["Remediate + Audit", "REMEDIATE"],
+            ["Submit delta-only round 2", "SUBMIT_ROUND_2"],
+            ["Block at review cap", "JUDGE_ROUND_2_BLOCK"],
+          ],
+        },
+        {
+          id: "reraises",
+          title: "Re-raise and delta guard",
+          description: "A malformed second review omits the live blocker, repeats a filed finding twice as new, and criticizes an unchanged file. The native artifact persists, but the protocol refuses to turn it into a round.",
+          steps: [
+            ["Submit round 1 review", "SUBMIT_ROUND_1"],
+            ["Dispose all three findings", "JUDGE_ROUND_1"],
+            ["Remediate + Audit", "REMEDIATE"],
+            ["Submit forbidden round 2", "SUBMIT_INVALID_ROUND_2"],
+          ],
+        },
+        {
+          id: "timeout",
+          title: "Interrupted Judge write",
+          description: "GitHub accepts the whole Ledger snapshot but the client never sees the response. Recovery discovers the mutation by ID and digest, writes no second decision, and finishes the missing dismissal pointer.",
+          steps: [
+            ["Submit round 1 review", "SUBMIT_ROUND_1"],
+            ["Timeout after accepted write", "JUDGE_ROUND_1_TIMEOUT"],
+            ["Recover exact mutation", "RETRY_JUDGE_WRITE"],
+          ],
+        },
+        {
+          id: "race",
+          title: "Concurrent Judges",
+          description: "Two Judge sessions read revision one. One files the new point and one blocks it. GitHub is last-write-wins, but the retained edit chain has two different revision-two children, making conflict mechanical.",
+          steps: [
+            ["Submit round 1 review", "SUBMIT_ROUND_1"],
+            ["Dispose all three findings", "JUDGE_ROUND_1"],
+            ["Remediate + Audit", "REMEDIATE"],
+            ["Submit round 2 review", "SUBMIT_ROUND_2"],
+            ["Race two Judge writes", "RACE_ROUND_2"],
+          ],
+        },
+        {
+          id: "stale",
+          title: "Stale review",
+          description: "Move the PR head before the Reviewer artifact arrives. The commit-pinned review remains visible, but it gets no logical round number and cannot consume or mutate the Ledger.",
+          steps: [
+            ["Move current head", "MOVE_HEAD"],
+            ["Submit old-head review", "SUBMIT_STALE_ROUND_1"],
+          ],
+        },
+      ];
+
+      let state;
+      let selectedScenario = scenarios[0].id;
+      let scenarioStep = 0;
+      let machineView = "ledger";
+      let busy = false;
+
+      const byId = (id) => document.getElementById(id);
+      const escapeHtml = (value) => String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+
+      function stateTone(value) {
+        if (["INTEGRATING"].includes(value)) return "good";
+        if (["ESCALATED"].includes(value)) return "bad";
+        if (["JUDGING", "REMEDIATING", "ANCHORING_LEDGER"].includes(value)) return "warn";
+        return "";
+      }
+
+      function renderState() {
+        const derived = LedgerProtocol.derive(state);
+        const found = LedgerProtocol.discovery(state);
+        const blockers = LedgerProtocol.openBlockers(state);
+        const rounds = state.ledger?.rounds.length || 0;
+        const latest = LedgerProtocol.latestReview(state);
+        const cells = [
+          ["Pipeline", derived, stateTone(derived)],
+          ["Current head", state.pr.head_sha.slice(0, 10), ""],
+          ["Audit", `${state.pr.audit_conclusion} @ ${state.pr.audit_sha.slice(0, 8)}`, state.pr.audit_conclusion === "success" ? "good" : "bad"],
+          ["Ledger discovery", `${found.status}${found.aliases.length ? ` + ${found.aliases.length} alias` : ""}`, found.errors.length ? "bad" : found.status === "canonical" ? "good" : ""],
+          ["Ledger revision", state.ledger ? `r${state.ledger.revision} · ${state.ledger_digest.slice(7, 17)}` : "none", ""],
+          ["Review samples", `${rounds} / ${state.policy.review_round_limit}`, rounds >= state.policy.review_round_limit ? "warn" : ""],
+          ["Latest review", latest ? `${latest.native_state} · ${latest.protocol_status}` : "none", latest?.protocol_status === "invalid" || latest?.protocol_status === "conflict" ? "bad" : ""],
+          ["Open blockers", String(blockers.length), blockers.length ? "warn" : "good"],
+          ["Follow-ups", String(state.follow_ups.length), ""],
+          ["Comment edits", String(state.edit_history.length), ""],
+          ["Dismissal anchors", String(state.reviews.filter((review) => review.dismissal).length), ""],
+          ["Integrity", found.errors.length ? `${found.errors.length} error(s)` : "valid", found.errors.length ? "bad" : "good"],
+        ];
+        byId("state-grid").innerHTML = cells.map(([label, value, tone]) => `
+          <div class="state-cell">
+            <span>${escapeHtml(label)}</span>
+            <strong class="${tone}">${escapeHtml(value)}</strong>
+          </div>
+        `).join("");
+        const event = byId("event");
+        event.dataset.tone = state.last_event.tone;
+        event.textContent = state.last_event.text;
+      }
+
+      function reviewStatusPill(review) {
+        const tones = { valid: "good", alias: "neutral", stale: "warn", invalid: "bad", conflict: "bad" };
+        return `<span class="pill ${tones[review.protocol_status] || "neutral"}">${escapeHtml(review.protocol_status)}</span>`;
+      }
+
+      function renderReview() {
+        const review = LedgerProtocol.latestReview(state);
+        const root = byId("review-artifact");
+        if (!review) {
+          root.innerHTML = `<div class="empty">No Reviewer artifact exists yet.<br>Submit round one to create a native, commit-pinned review.</div>`;
+          return;
+        }
+
+        const resolutionRows = review.payload.resolved_findings.map((item) => {
+          const ledgerItem = state.ledger?.findings.find((finding) => finding.finding_id === item.finding_id);
+          return `<div class="mini-finding"><strong>${escapeHtml(ledgerItem?.label || LedgerProtocol.shortId(item.finding_id))} · resolved</strong><p>${escapeHtml(item.explanation)}</p></div>`;
+        }).join("");
+        const findingRows = review.payload.findings.map((item) => {
+          const ledgerItem = state.ledger?.findings.find((finding) => finding.finding_id === item.finding_id);
+          return `<div class="mini-finding"><strong>${escapeHtml(ledgerItem?.label || LedgerProtocol.shortId(item.finding_id))} · ${escapeHtml(item.defect_class)}</strong><p>${escapeHtml(item.summary)}</p></div>`;
+        }).join("");
+        const errors = review.validation_errors.length
+          ? `<ul class="integrity-list">${review.validation_errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>`
+          : "";
+
+        root.innerHTML = `
+          <div class="review-card">
+            <div class="review-meta">
+              <span>review ${review.id}</span>
+              <span>Principal ${review.reviewer_principal_id}</span>
+              <span>${review.commit_id.slice(0, 10)}</span>
+              ${reviewStatusPill(review)}
+              <span class="pill ${review.native_state === "APPROVED" ? "good" : "bad"}">${review.native_state}</span>
+            </div>
+            <h4>${review.payload.findings.length} new/continuing point(s), ${review.payload.resolved_findings.length} resolved blocker(s)</h4>
+            <p class="muted">Delta <code>${review.payload.delta_base_sha.slice(0, 8)}…${review.payload.head_sha.slice(0, 8)}</code> · body <code>${review.body_digest.slice(7, 19)}</code></p>
+            <div class="review-findings">${resolutionRows}${findingRows || `<div class="mini-finding"><strong>No findings</strong><p>The native event must be APPROVE.</p></div>`}</div>
+            ${errors}
+            ${review.dismissal ? `<details><summary>Ledger pointer carried by dismissal</summary><pre>${escapeHtml(JSON.stringify(review.dismissal, null, 2))}</pre></details>` : ""}
+          </div>
+        `;
+      }
+
+      function statusPill(status) {
+        const tone = { blocking: "bad", resolved: "good", follow_up: "accent", dropped: "neutral" }[status] || "warn";
+        return `<span class="pill ${tone}">${escapeHtml(status.replaceAll("_", " "))}</span>`;
+      }
+
+      function renderLedger() {
+        const root = byId("ledger-artifact");
+        const found = LedgerProtocol.discovery(state);
+        if (!state.ledger || !found.canonical) {
+          root.innerHTML = `<div class="empty">No canonical Ledger comment exists yet.<br>The first complete Judge transaction creates it.</div>`;
+          return;
+        }
+
+        const rounds = state.ledger.rounds.map((round) => `
+          <tr>
+            <td>R${round.number}</td>
+            <td><code>${round.delta_base_sha.slice(0, 8)}…${round.head_sha.slice(0, 8)}</code></td>
+            <td>${escapeHtml(round.native_verdict)}</td>
+            <td>${escapeHtml(round.finding_labels.join(", ") || "none")}</td>
+            <td>${escapeHtml(round.resolved_finding_labels.join(", ") || "none")}</td>
+          </tr>
+        `).join("");
+
+        const findings = state.ledger.findings.map((item) => {
+          const occurrence = item.occurrences.at(-1);
+          const outcome = item.disposition.outcome.replaceAll("_", " ");
+          const outcomeDetail = item.disposition.follow_up
+            ? `<a href="${escapeHtml(item.disposition.follow_up.url)}">issue ${item.disposition.follow_up.issue_number}</a>`
+            : item.disposition.required_change ? escapeHtml(item.disposition.required_change) : "—";
+          return `
+            <div class="finding-card">
+              <div class="finding-head">
+                <div>
+                  <h4>${escapeHtml(item.label)} · ${escapeHtml(item.defect_class.replaceAll("_", " "))}</h4>
+                  <code>${escapeHtml(item.finding_id)}</code>
+                </div>
+                ${statusPill(item.status)}
+              </div>
+              <p><strong>${escapeHtml(item.summary)}</strong></p>
+              <dl>
+                <dt>Evidence</dt><dd>${escapeHtml(occurrence.evidence[0].observation)}</dd>
+                <dt>Location</dt><dd><code>${escapeHtml(occurrence.location.path)}:${occurrence.location.start_line}</code> @ ${occurrence.head_sha.slice(0, 8)}</dd>
+                <dt>Disposition</dt><dd><strong>${escapeHtml(outcome)}</strong> — ${escapeHtml(item.disposition.rationale)}</dd>
+                <dt>Required/link</dt><dd>${outcomeDetail}</dd>
+                ${item.resolution ? `<dt>Resolution</dt><dd>R${item.resolution.round}: ${escapeHtml(item.resolution.explanation)}</dd>` : ""}
+              </dl>
+            </div>
+          `;
+        }).join("");
+
+        const errors = found.errors.length
+          ? `<ul class="integrity-list">${found.errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>`
+          : "";
+
+        root.innerHTML = `
+          <div class="ledger-comment">
+            <div class="ledger-meta">
+              <span>comment ${found.canonical.id}</span>
+              <span>Judge Principal ${found.canonical.author_principal_id}</span>
+              <span>revision ${state.ledger.revision}</span>
+              <span>${found.aliases.length} create alias(es)</span>
+              <span class="pill ${found.errors.length ? "bad" : "good"}">${found.errors.length ? "invalid" : "validated"}</span>
+            </div>
+            <h4>my-team Ledger · acme/payments#418</h4>
+            <p class="muted">Contract r${state.ledger.contract.revision} · <code>${state.ledger.contract.digest.slice(7, 19)}</code> · Ledger <code>${state.ledger_digest.slice(7, 19)}</code></p>
+            <div style="overflow-x:auto; margin-bottom:14px">
+              <table class="round-table">
+                <thead><tr><th>Round</th><th>Reviewed delta</th><th>Verdict</th><th>Points</th><th>Resolved</th></tr></thead>
+                <tbody>${rounds}</tbody>
+              </table>
+            </div>
+            <div class="finding-list">${findings}</div>
+            ${errors}
+            <details><summary>Machine envelope used in the real comment</summary><pre>${escapeHtml(`<!-- my-team:ledger:v1:start -->\n\`\`\`json\n{ ... normative object below ... }\n\`\`\`\n<!-- my-team:ledger:v1:end -->`)}</pre></details>
+          </div>
+        `;
+      }
+
+      function renderMachine() {
+        const review = LedgerProtocol.latestReview(state);
+        const value = machineView === "ledger"
+          ? state.ledger || { status: "absent", note: "The first complete Judge transaction creates my-team.ledger/v1." }
+          : review?.payload || { status: "absent", note: "Submit a Reviewer artifact to see my-team.review/v1." };
+        byId("machine-json").textContent = JSON.stringify(value, null, 2);
+        byId("show-ledger-json").setAttribute("aria-selected", String(machineView === "ledger"));
+        byId("show-review-json").setAttribute("aria-selected", String(machineView === "review"));
+      }
+
+      function renderScenarios() {
+        byId("scenario-tabs").innerHTML = scenarios.map((scenario) => `
+          <button class="tab" role="tab" data-scenario="${scenario.id}" aria-selected="${scenario.id === selectedScenario}">${escapeHtml(scenario.title)}</button>
+        `).join("");
+        const scenario = scenarios.find((item) => item.id === selectedScenario);
+        const steps = scenario.steps.map(([label, action], index) => `
+          ${index ? `<span class="arrow" aria-hidden="true">→</span>` : ""}
+          <button
+            class="scenario-step ${index < scenarioStep ? "done" : index === scenarioStep ? "current" : ""}"
+            data-scenario-action="${action}"
+            data-step-index="${index}"
+            ${index !== scenarioStep ? "disabled" : ""}
+          >${index < scenarioStep ? "✓ " : `${index + 1}. `}${escapeHtml(label)}</button>
+        `).join("");
+        byId("walkthrough").innerHTML = `<h3>${escapeHtml(scenario.title)}</h3><p>${escapeHtml(scenario.description)}</p><div class="scenario-steps">${steps}</div>`;
+      }
+
+      function render() {
+        renderState();
+        renderScenarios();
+        renderReview();
+        renderLedger();
+        renderMachine();
+      }
+
+      async function dispatch(action, fromScenario = false) {
+        if (busy) return;
+        busy = true;
+        try {
+          state = await LedgerProtocol.transition(state, action);
+          if (fromScenario) scenarioStep += 1;
+          render();
+        } finally {
+          busy = false;
+        }
+      }
+
+      async function selectScenario(id) {
+        selectedScenario = id;
+        scenarioStep = 0;
+        state = await LedgerProtocol.initialState();
+        render();
+      }
+
+      async function init() {
+        state = await LedgerProtocol.initialState();
+        byId("reset").addEventListener("click", async () => {
+          scenarioStep = 0;
+          await dispatch("RESET");
+        });
+        byId("scenario-tabs").addEventListener("click", (event) => {
+          const button = event.target.closest("[data-scenario]");
+          if (button) selectScenario(button.dataset.scenario);
+        });
+        byId("walkthrough").addEventListener("click", (event) => {
+          const button = event.target.closest("[data-scenario-action]");
+          if (button) dispatch(button.dataset.scenarioAction, true);
+        });
+        document.querySelector(".action-groups").addEventListener("click", (event) => {
+          const button = event.target.closest("[data-action]");
+          if (button) dispatch(button.dataset.action);
+        });
+        byId("show-ledger-json").addEventListener("click", () => { machineView = "ledger"; renderMachine(); });
+        byId("show-review-json").addEventListener("click", () => { machineView = "review"; renderMachine(); });
+        render();
+      }
+
+      return { init };
+    })();
+
+    Demo.init();
+  </script>
+</body>
+</html>
