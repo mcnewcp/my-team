@@ -1,5 +1,13 @@
 # The label act is the authorization
 
+> **Supersession note:** [ADR-0013](./0013-pipeline-state-is-a-label-backed-cursor.md) retains the
+> trusted-human label act as Authorization but narrows its gate to ordinary pipeline advancement
+> and dispatch from a settled nonterminal State. Transition recovery, quarantine, explicitly
+> directed State repair and terminal bookkeeping may act while unauthorized; ADR-0013 replaces the
+> old ladder row numbers below. Reauthorization from `escalated` must follow that occurrence's
+> attributable issue-timeline notice anchor, while post-repair Authorization must follow the
+> freshly applied target State.
+
 An issue enters the loop when a trusted human applies `ready-for-agent`; who *authored*
 the issue does not matter. GitHub enforces that only triage-or-above can apply a label, so
 the label is already proof that someone with write access read the issue and vouched for
@@ -108,7 +116,10 @@ editing to the comment's author and users with write access, so every possible e
 trusted comment is itself trusted. The issue body is different only because its author can
 edit it forever regardless of association.
 
-**Re-authorization is re-vouching, not ceremony.** Because the freshness clause anchors on
-the *most recent* `labeled: ready-for-agent` event, a human clearing a tampering escalation
-has to look at the body as it now stands before swapping the label back. The ritual for
-acting on an outsider's good issue is the same one act: label it.
+**Re-authorization is re-vouching, not ceremony.** Because the freshness clause anchors on the
+most recent trusted-human `labeled: ready-for-agent` event, a human clearing a tampering escalation
+has to look at the body as it now stands before swapping the label back. Orchestrator-authored
+Queue projections never move that anchor. When clearing `escalated`, the qualifying event must
+follow that occurrence's notice-completion anchor; after repair, it must follow the fresh
+target-State application. The ritual for acting on an outsider's good issue is the same one act:
+label it.

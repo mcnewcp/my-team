@@ -2,7 +2,10 @@
 
 A Reviewer submits an attributable native pull-request review containing a closed machine
 envelope. The envelope binds the pull request, frozen **Contract** digest, reviewed head and delta
-base; a digest of those values is the **Review round** identity. The native verdict must agree
+base. [ADR-0013](./0013-pipeline-state-is-a-label-backed-cursor.md) additionally requires the exact
+passing Audit identity that admitted the current `reviewing` occurrence, preventing a same-head
+artifact from an earlier occurrence from becoming current; its encoding remains with the Audit
+contract. A digest of those values is the **Review round** identity. The native verdict must agree
 with the envelope. The first Review round covers the base-to-head diff, while every later Review
 round starts at the preceding accepted head.
 
@@ -24,8 +27,10 @@ identity and Disposition.
 Every accepted Review round is incorporated into the Ledger before integration. When an
 `APPROVED` review resolves prior blockers and introduces no new Findings, its whole snapshot
 records those resolutions without inventing a subjective Disposition. The Ledger remains under
-the Judge Principal; which pipeline Action performs this non-discretionary projection is left to
-the State and Auditor/Integrator boundary decisions.
+the Judge Principal. [ADR-0013](./0013-pipeline-state-is-a-label-backed-cursor.md) keeps State in
+`reviewing` until this non-discretionary projection is valid, then advances directly to
+`integrating`; the Auditor/Integrator boundary decision still chooses which component performs
+the setter.
 
 The Ledger is one Judge-authored pull-request conversation comment. One closed JSON authority is
 rendered as readable Markdown, and every mutation replaces the whole projection with a snapshot

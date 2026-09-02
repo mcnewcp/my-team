@@ -5,6 +5,15 @@
 > **Round** for every draft-latched Implementer cycle. A **Review round** is now a Reviewer sample,
 > and the **Ledger** carries the Judge's **Dispositions**. The draft latch and the empirical
 > findings about native reviews, numeric Principals, pinned SHAs and settling time remain in force.
+> [ADR-0013](./0013-pipeline-state-is-a-label-backed-cursor.md) separately supersedes the rejection
+> of an orchestrator-written State label; the label is a cursor, while the draft latch remains
+> native evidence that Implementer work is complete. Each new `implementing` or `remediating`
+> producer cycle opens its own latch, so an older ready event cannot complete a later cycle;
+> re-entry from `escalated` resumes the interrupted cycle and inherits its open-or-not-yet-open
+> latch. It also supersedes the statement below that all implementation dispatch is one State:
+> `implementing` and `remediating` are distinct owners that share this one latch protocol. The
+> issue-to-pull-request boundary remains mechanical, but ADR-0013 defers the exact author, title and
+> pull-request schema assumed below to the branch-and-merge contract.
 
 A pull request is a draft exactly when the implementer holds it. The orchestrator converts it
 to draft whenever it dispatches implementation work — first pass, CI repair, or judge-requested
