@@ -70,16 +70,25 @@ keeps one **Harness selection** through its whole continuity chain — each stop
 may belong to the same Role.
 _Avoid_: job, step, task
 
-**Round**:
-One lap of the loop: the orchestrator hands the pull request to the implementer, and the
-implementer hands it back. Bracketed by the draft flag, so rounds are countable from the timeline
-rather than remembered. A round that revises, a round that repairs a red check and a round that
-rebases a conflict are the same kind of thing and are counted together.
-_Avoid_: iteration, pass, attempt, turn
+**Review round**:
+One current, protocol-valid Reviewer sample of a pull request's permitted code delta. Stale or
+exact-retry artifacts remain evidence but do not create another Review round.
+_Avoid_: round, iteration, pass, attempt, turn
 
-**Disposal**:
-The judge's ruling on one of the reviewer's points, of which there are exactly three: **necessary now**, **worth keeping** — filed as a fresh issue — or **dropped**. Every point gets exactly one, and there is no non-blocking fourth, because nothing in the loop would ever read it.
-_Avoid_: verdict, triage, ruling, severity
+**Finding**:
+A structured, evidence-backed Reviewer claim that one defect exists at a stable code anchor. Its
+identity follows the claimed failure rather than its wording, evidence or line number.
+_Avoid_: point, comment, suggestion, concern
+
+**Disposition**:
+The Judge's immutable decision for one new **Finding**: blocking now, follow-up or dropped. Every
+new Finding receives exactly one.
+_Avoid_: disposal, verdict, triage, ruling, severity
+
+**Ledger**:
+The durable history of adjudicated **Review rounds**, their **Findings**, **Dispositions** and
+resolutions for one pull request. It is the record later Roles consult to bound subjective review.
+_Avoid_: review log, state file, scratchpad
 
 **Escalation**:
 Handing an issue back to the **product owner**: the orchestrator swaps `ready-for-agent` for `ready-for-human`, states in one comment which limit tripped and on what evidence, and exits. The counterpart to halting, which stops without asking for anything because the human is already acting.
