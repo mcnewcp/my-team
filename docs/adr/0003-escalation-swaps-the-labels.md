@@ -1,11 +1,23 @@
 # Escalation swaps the labels, and the swap back resets the limits
 
-When the loop stops converging, the orchestrator removes `ready-for-agent`, adds
-`ready-for-human`, mentions the product owner once with the evidence, and exits. Every
-convergence limit is counted from the most recent `labeled: ready-for-agent` event on the
-issue timeline, so the human's act of re-authorizing the issue is the same act that clears
-the counters. Nothing is written down: the limits and their reset both derive from the
-issue's own history.
+> **Supersession note:** [ADR-0013](./0013-pipeline-state-is-a-label-backed-cursor.md) broadens
+> `ready-for-agent` and `ready-for-human` into a queue projection for every automated or
+> human-waiting State. The escalation swap, trusted-human reauthorization and limit-reset
+> semantics in this record remain in force for a valid State. State corruption has no valid source
+> to replace with `escalated`, and an unexpected merge is irreversible terminal truth, so ADR-0013
+> instead quarantines either while preserving the State labels until an explicit repair. It also
+> abstracts this record's comment into a durable notice-completion anchor on the issue timeline,
+> bound to the escalation occurrence. Concrete mutation credentials, anchor encoding, notice
+> carrier, schema and rendering are decided later; its narrative payload never selects State or an
+> Action.
+
+When the loop stops converging, the orchestrator enters `escalated`, adds `ready-for-human`, then
+removes `ready-for-agent`, reobserving after each mutation, and records one attributable
+notice-completion anchor for that occurrence on the issue timeline before accepting
+reauthorization. Every convergence limit is counted from the most recent trusted-human application
+of `ready-for-agent` that opened the Authorization epoch. Orchestrator-authored Queue projections
+never reset a counter. The human's later reauthorization is therefore the same act that clears the
+counters, and both the limits and their reset derive from issue history.
 
 ## Considered options
 
@@ -53,6 +65,7 @@ adding `ready-for-agent` back leaves the issue matching `HALTED`, and the loop s
 without asking for anything. This is the correct reading — an issue with neither label is
 untriaged — but it is a quiet stop rather than a loud one, so `work` says so on exit.
 
-The escalation comment has to carry its own evidence. A resumed loop re-derives everything
-from GitHub and remembers nothing about why it stopped, so the comment is the only record
-of which limit tripped, at what value, and what the last agent said before it did.
+The escalation notice has to make its evidence durably available. A resumed loop remembers
+nothing about why it stopped, so it observes only the issue-timeline anchor's attribution,
+occurrence binding and event ordering. The CLI contract decides its exact encoding and the
+notice's carrier, schema and rendering; the ladder never parses the narrative payload.

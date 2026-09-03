@@ -1,5 +1,11 @@
 # Agents work in an isolated worktree, and handoffs never enter git
 
+> **Supersession note:** [ADR-0013](./0013-pipeline-state-is-a-label-backed-cursor.md) retains
+> this record's refusal to observe the workspace, but supersedes the claims below that the remote
+> branch and pull request alone select an Action and that one State names one Action. The issue's
+> label-backed State is also GitHub evidence, names the owner of the next work, and feeds a
+> State-local Ladder that selects at most one Action.
+
 Each issue gets a `git worktree` under `~/.local/state/my-team/<owner>-<repo>/<issue>/`, and the
 handoff documents an agent writes for its successor live beside that worktree rather than on the
 working branch. Working in the human's own checkout would lock them out of their repo for the

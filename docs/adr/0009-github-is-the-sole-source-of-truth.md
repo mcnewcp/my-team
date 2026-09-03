@@ -1,7 +1,17 @@
 # GitHub is the sole source of truth for orchestrator state
 
+> **Supersession note:** [ADR-0013](./0013-pipeline-state-is-a-label-backed-cursor.md)
+> supersedes this record's definition of State as computed and never stored, and its rejection of
+> an orchestrator-written State label. GitHub remains the sole durable source of truth; local
+> orchestration memory remains non-authoritative. ADR-0013 also supersedes the statement below
+> that one State names one Action: State now names one owner, whose State-local ladder may select
+> several Actions over separate ticks. Explicit State repair is the one narrow input exception:
+> its Product owner direction and target are supplied afresh to every repair tick rather than
+> derived from GitHub or remembered locally. GitHub evidence still keeps an interrupted repair
+> quarantined, and ordinary Action selection remains Observation-derived.
+
 The orchestrator holds nothing durable. Every tick reads one Observation of the target repo from
-GitHub, derives a State from it, performs one action, and exits. State is computed and never
+GitHub, derives a State from it, performs at most one Action, and exits. State is computed and never
 stored — not in a file, not in a database, not in a label the orchestrator wrote itself. The same
 Observation always yields the same State, and no tick knows anything about the tick before it.
 
@@ -46,7 +56,7 @@ Anything beyond it re-introduces the problem in miniature.
 
 ## Consequences
 
-**The tick is the primitive, and it is cheap.** One Observation, one action, exit. Rows that
+**The tick is the primitive, and it is cheap.** One Observation, at most one Action, exit. Rows that
 mutate mechanically stop rather than also dispatching, because two mutations in one tick buy one
 saved tick at the cost of a crash window — and ticks are free precisely because there is nothing
 to reload.

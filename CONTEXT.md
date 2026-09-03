@@ -15,7 +15,8 @@ The project `my-team` is pointed at, where issues, PRs and CI live. The CLI is i
 _Avoid_: client repo, downstream repo, consumer repo
 
 **Workspace**:
-The per-issue directory an agent works in — a `git worktree` of the target repo, plus that issue's handoffs alongside it. Lives outside every repo and is discarded when the issue merges.
+The per-issue directory an agent works in — a `git worktree` of the target repo, plus that issue's
+handoffs alongside it. It lives outside every repo.
 _Avoid_: sandbox, checkout, workdir
 
 **Fixture repo**:
@@ -25,7 +26,7 @@ _Avoid_: sandbox, scratch repo, test repo
 ### The loop
 
 **Tick**:
-One observation of the target repo's state followed by exactly one action, then exit. The orchestrator's primitive unit of work.
+One **Observation** of the target repo followed by at most one **Action**, then exit. The orchestrator's primitive unit of work.
 _Avoid_: step, cycle, iteration
 
 **Harness**:
@@ -91,11 +92,19 @@ resolutions for one pull request. It is the record later Roles consult to bound 
 _Avoid_: review log, state file, scratchpad
 
 **Escalation**:
-Handing an issue back to the **product owner**: the orchestrator swaps `ready-for-agent` for `ready-for-human`, states in one comment which limit tripped and on what evidence, and exits. The counterpart to halting, which stops without asking for anything because the human is already acting.
+Handing an issue back to the **Product owner** from a valid **State**: the orchestrator moves State
+to `escalated`, projects `ready-for-human`, makes a durable notice of what blocked the loop and on
+what evidence available, and anchors its completion on the issue timeline before exiting. Only the
+anchor's attribution, occurrence binding and event order gate recovery; the human-readable notice
+is **Narration**. **State corruption** and an unexpected merge are quarantined instead; halting
+stops without asking for anything because the human is already acting.
 _Avoid_: failure, abort, bail
 
 **Authorization**:
-A **trusted human** applying `ready-for-agent` to an issue body they have read — the act that admits an issue to the loop. It lapses if the body is edited by an untrusted editor afterwards, and **escalation** revokes it.
+A **Trusted human** applying `ready-for-agent` to an issue body they have read — the act that opens
+an authorization epoch and admits the issue to the loop. Orchestrator-authored queue changes never
+authorize; the epoch lapses if the body is edited by an untrusted editor afterwards, and
+**Escalation**, State-corruption quarantine or unexpected-merge quarantine revokes it.
 _Avoid_: approval, permission, gate, sign-off
 
 ### The Contract
@@ -111,10 +120,16 @@ may be followed by a correction or successor; it is not yet permission to implem
 _Avoid_: draft contract, proposal, working contract
 
 **Contract Approval**:
-The act by which the **Product owner** accepts one **Contract Candidate** as the definition of done
-and releases implementation. It is distinct from **Authorization**, which admits the issue to
-the loop.
+The **Product owner** adding `+1` to the current valid **Contract Candidate**, accepting it as the
+definition of done and releasing implementation. It is distinct from **Authorization**, which
+admits the issue to the loop.
 _Avoid_: authorization, sign-off, acceptance
+
+**Contract Rework**:
+The **Product owner** adding `-1` to the current valid **Contract Candidate**, returning State to
+`contracting` so the Contractor can propose a successor. Explanatory prose informs the Contractor
+but never moves State; simultaneous `+1` and `-1` reactions escalate.
+_Avoid_: rejection, disapproval, change request
 
 **Acceptance Criterion**:
 One stable, falsifiable outcome in a **Contract** that the finished change must prove. A changed
@@ -144,7 +159,12 @@ _Avoid_: working directory, read scope, module
 ### State and narration
 
 **Observation**:
-The single snapshot of the target repo's GitHub state that one tick reads before it acts — the issue, the remote branch, the PR, its reviews, the checks at the current head, and the PR timeline. Local git inside the workspace is never part of it. A tick observes once; everything it decides comes from that one snapshot.
+The single snapshot of the target repo's GitHub state that one tick reads before it acts — the
+issue and its timeline, protocol comments and reactions, the remote branch, the pull request and
+its timeline, reviews, Ledger and checks at the current head. Local git inside the workspace is
+never part of it; an ordinary tick observes once, and everything it decides comes from that
+snapshot. A **State repair** tick additionally receives the Product owner's explicit direction,
+resupplied rather than remembered across ticks.
 _Avoid_: poll, scan, read
 
 **Progress event**:
@@ -152,16 +172,78 @@ An externally caused fact proving the issue moved — a new commit, a review sub
 _Avoid_: activity, heartbeat, update
 
 **State**:
-The derived value naming where an issue sits in the loop. Computed from an Observation, never stored, and never written anywhere: the same Observation always yields the same State. The set is fixed and ordered, and the order is what breaks ties between states that look alike.
+The durable cursor stored throughout the loop as a `my-team:<state>` label on the issue, never on
+its pull request; it names the responsibility that owns the next work and is entered before its
+Action begins. A settled State has exactly one label, while an adjacent source-and-destination pair
+marks a transition in progress. Its values are `contracting`, `awaiting-contract-approval`,
+`needs-clarification`, `implementing`, `auditing`, `reviewing`, `judging`, `remediating`,
+`integrating`, `escalated` and `merged`. The orchestrator alone moves State; native artifacts
+corroborate its entry and exit and prove Role completion, while the cursor alone never proves work
+and artifacts never become competing State.
 _Avoid_: status, phase, stage
 
+**State transition**:
+The orchestrator-owned movement along one edge of the fixed **State** graph: add the destination,
+reobserve, remove the source, and reobserve again before acting. Each mutation is an idempotent
+tick of its own; escalation may interrupt any ordinary nonterminal State other than `escalated`,
+while conditions that merely stop or delay the loop do not move State.
+_Avoid_: state swap, status update, phase change, jump
+
+**State occurrence**:
+One visit to a **State**, identified by the latest attributable application of its destination
+label and the direct entry evidence for that edge. A later return to the same State is a new
+occurrence, so artifacts from an earlier visit cannot discharge it merely by looking alike.
+_Avoid_: attempt, round, phase instance
+
+**State corruption**:
+A State-label set that is neither an untouched issue, one attributable settled State, nor one
+attributable adjacent State transition. It is quarantined without changing those labels or
+dispatching work; artifacts never guess a replacement, and the Product owner must direct a
+**State repair** before ordinary reauthorization.
+_Avoid_: ambiguous State, inferred State, best-effort recovery
+
+**State repair**:
+An explicit **Product owner** direction naming the one non-`escalated` **State** that should replace
+a corrupt label set, or naming `merged` to acknowledge an irreversible unexpected merge. The
+fresh target application made under that direction substitutes for a missing adjacent source edge
+only when the target's other identity and artifact bindings validate; repair does not itself
+restore **Authorization**.
+_Avoid_: reset, inference, automatic recovery
+
+**Queue projection**:
+The current `ready-for-agent` or `ready-for-human` triage label derived from who owns the next work:
+automation for an active pipeline State, or the **Product owner** for a human-waiting State. It is
+tracker routing rather than State or Authorization, and `merged` projects neither label. A repaired
+nonterminal State remains human-queued until fresh **Authorization**; only an interrupted
+orchestrator-authored projection is repaired automatically, while other drift halts without moving
+State so a human queue edit remains an effective pause.
+_Avoid_: State label, authorization label, status
+
+**Invariant spine**:
+The compact set of durable identity, **Contract**, Principal and artifact bindings that every later
+State continues to validate alongside that State's direct **Entry invariant**. Artifact hash chains
+prove their own history, so recovery need not replay every preceding State transition.
+_Avoid_: transition replay, workflow history, local checkpoint
+
+**Entry invariant**:
+The protocol-valid GitHub evidence that made entering one **State** legal and must remain valid
+while that State owns the work. Once an Observation is coherent, a broken Entry invariant
+escalates rather than moving State backward.
+_Avoid_: prerequisite, previous-State output, assumed context
+
+**Exit evidence**:
+The protocol-valid GitHub evidence by which one **State** selects exactly one adjacent destination.
+Absent or incomplete Exit evidence leaves the current State responsible; stale evidence is history,
+while malformed or conflicting current evidence escalates.
+_Avoid_: completion label, agent report, inferred progress
+
 **Ladder**:
-The ordered list of guarded rows from which **State** is derived — evaluated top to bottom, first
-match wins. The order is the ambiguity-breaker between states that look alike from one snapshot,
-so it is part of the design rather than an implementation detail, and the ladder is data the tests
-can enumerate rather than a chain of branches. Every row whose action is a dispatch has a guard
-that is the negation of that action's definition of done, which is what makes a re-fire a retry
-rather than a livelock.
+The ordered list of guarded rows that derives the next **Action** from **State** and an
+**Observation**. Its order breaks ties between simultaneously visible evidence, so it is part of
+the design rather than an implementation detail; it selects at most one Action per tick and is
+data the tests can enumerate rather than a chain of branches. Every row whose Action is a dispatch
+has a guard that is the negation of that Action's definition of done, which is what makes a re-fire
+a retry rather than a livelock.
 _Avoid_: rules, dispatch table, decision tree, chain
 
 **Declaration**:
@@ -171,7 +253,9 @@ attributable to a **Principal**, never prose the orchestrator reads.
 _Avoid_: signal, report, claim
 
 **Narration**:
-What humans read — reasoning, progress, and the events a future feed or board view would render. Never an input to an orchestrator decision. Distinct from **state**, and free to live outside GitHub as long as it is reachable by a link from it.
+What humans read — the human-readable account of reasoning, progress and events that a future feed
+or board view would render. Its payload never selects **State** or an **Action**. Distinct from
+State, and free to live outside GitHub as long as it is reachable by a link from it.
 _Avoid_: logs, chatter, output
 
 **Sink**:
